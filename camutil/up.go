@@ -40,16 +40,18 @@ type Uploader struct {
 }
 
 // copied from camlistore.org/cmd/camput/camput.go
-func newUploader() *Uploader {
-	cc := client.NewOrFail()
+func NewUploader(server string) (*Uploader, error) {
+	cc, err := NewClient(server)
+	if err != nil {
+		return nil, err
+	}
 	if !Verbose {
 		cc.SetLogger(nil)
 	}
 
-	proxy := http.ProxyFromEnvironment
 	tr := cc.TransportForConfig(
 		&client.TransportConfig{
-			Proxy:   proxy,
+			Proxy:   http.ProxyFromEnvironment,
 			Verbose: Verbose,
 		})
 	cc.SetHTTPClient(&http.Client{Transport: tr})
@@ -63,5 +65,5 @@ func newUploader() *Uploader {
 		Client: cc,
 		pwd:    pwd,
 		fdGate: syncutil.NewGate(100), // gate things that waste fds, assuming a low system limit
-	}
+	}, nil
 }

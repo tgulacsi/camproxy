@@ -38,9 +38,27 @@ type Downloader struct {
 	dc *cacher.DiskCache
 }
 
+var cachedClient *client.Client
+
+func NewClient(server string) (*client.Client, error) {
+	if cachedClient != nil {
+		return cachedClient, nil
+	}
+	c := client.New(server)
+	if err := c.SetupAuth(); err != nil {
+		return nil, err
+	}
+	cachedClient = c
+	return c, nil
+}
+
 // copied from camlistore.org/cmd/camget
-func NewDownloader() (*Downloader, error) {
-	down := &Downloader{cl: client.NewOrFail()}
+func NewDownloader(server string) (*Downloader, error) {
+	down := new(Downloader)
+	var err error
+	if down.cl, err = NewClient(server); err != nil {
+		return nil, err
+	}
 
 	down.cl.InsecureTLS = InsecureTLS
 	tr := down.cl.TransportForConfig(&client.TransportConfig{
@@ -48,7 +66,6 @@ func NewDownloader() (*Downloader, error) {
 	})
 	down.cl.SetHTTPClient(&http.Client{Transport: tr})
 
-	var err error
 	down.dc, err = cacher.NewDiskCache(down.cl)
 	if err != nil {
 		return nil, fmt.Errorf("Error setting up local disk cache: %v", err)
@@ -66,7 +83,7 @@ func (down *Downloader) Close() {
 	}
 }
 
-func parseBlobNames(items []blob.Ref, names []string) ([]blob.Ref, error) {
+func ParseBlobNames(items []blob.Ref, names []string) ([]blob.Ref, error) {
 	for _, arg := range names {
 		br, ok := blob.Parse(arg)
 		if !ok {
@@ -77,10 +94,9 @@ func parseBlobNames(items []blob.Ref, names []string) ([]blob.Ref, error) {
 	return items, nil
 }
 
-func (down *Downloader) Download(dest string, contents bool, items ...blob.Ref) error {
+func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Ref) error {
 	var rc io.ReadCloser
 	var err error
-	if dest == "" || dest == "-" {
 		for _, br := range items {
 			if contents {
 				rc, err = schema.NewFileReader(down.dc, br)
@@ -94,17 +110,19 @@ func (down *Downloader) Download(dest string, contents bool, items ...blob.Ref) 
 				log.Fatal(err)
 			}
 			defer rc.Close()
-			if _, err := io.Copy(os.Stdout, rc); err != nil {
+			if _, err := io.Copy(dest, rc); err != nil {
 				return fmt.Errorf("Failed reading %q: %v", br, err)
 			}
 		}
-	} else {
+        return nil
+    }
+
+func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
 		for _, br := range items {
-			if err := smartFetch(down.dc, dest, br); err != nil {
+			if err := smartFetch(down.dc, destDir, br); err != nil {
 				log.Fatal(err)
 			}
 		}
-	}
 	return nil
 }
 
