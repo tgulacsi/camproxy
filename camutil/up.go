@@ -17,53 +17,74 @@ limitations under the License.
 package camutil
 
 import (
+	"bytes"
+	"encoding/base64"
+	"fmt"
 	"log"
-	"net/http"
-	"os"
+	"os/exec"
+	"path/filepath"
 
-	"camlistore.org/pkg/client"
-	"camlistore.org/pkg/syncutil"
+	"camlistore.org/pkg/blob"
 )
 
-// copied from camlistore.org/cmd/camput/uploader.go
 type Uploader struct {
-	*client.Client
-
-	// fdGate guards gates the creation of file descriptors.
-	fdGate *syncutil.Gate
-
-	pwd string
-	//statCache UploadCache
-	//haveCache HaveCache
-
-	fs http.FileSystem // virtual filesystem to read from; nil means OS filesystem.
+	server string
+	args   []string
 }
 
-// copied from camlistore.org/cmd/camput/camput.go
-func NewUploader(server string) (*Uploader, error) {
-	cc, err := NewClient(server)
+func NewUploader(server string) *Uploader {
+	if server != "" {
+		return &Uploader{server: server, args: []string{"-server=" + server, "file"}}
+	}
+	return &Uploader{server: server}
+}
+
+// UploadFile uploads the given path (file or directory, recursively), and
+// returns the content ref, the permanode ref (if you asked for it), and error
+func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.Ref, err error) {
+	i := len(u.args) + 2
+	if permanode {
+		i++
+	}
+	args := append(make([]string, 0, i), u.args...)
+	if permanode {
+		args = append(args, "--permanode")
+	}
+	dir, base := filepath.Split(path)
+	args = append(args, base)
+	log.Printf("camput %s", args)
+	c := exec.Command("camput", args...)
+	c.Dir = dir
+	errbuf := bytes.NewBuffer(nil)
+	c.Stderr = errbuf
+	out, err := c.Output()
 	if err != nil {
-		return nil, err
+		err = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
+		return
 	}
-	if !Verbose {
-		cc.SetLogger(nil)
+	var br, zbr blob.Ref
+	var ok bool
+	err = nil
+	// the last line is the permanode ref, the first is the content
+	for _, line := range bytes.Split(bytes.TrimSpace(out), []byte{'\n'}) {
+		if br, ok = blob.Parse(string(line)); ok {
+			if content == zbr {
+				content = br
+			} else {
+				perma = br
+			}
+		}
 	}
+	return
+}
 
-	tr := cc.TransportForConfig(
-		&client.TransportConfig{
-			Proxy:   http.ProxyFromEnvironment,
-			Verbose: Verbose,
-		})
-	cc.SetHTTPClient(&http.Client{Transport: tr})
-
-	pwd, err := os.Getwd()
+// RefToBase64 returns a base64-encoded version of the ref
+func RefToBase64(br blob.Ref) string {
+	data, err := br.MarshalBinary()
 	if err != nil {
-		log.Fatalf("os.Getwd: %v", err)
+		log.Printf("error marshaling %v: %s", br, err)
+		return ""
 	}
-
-	return &Uploader{
-		Client: cc,
-		pwd:    pwd,
-		fdGate: syncutil.NewGate(100), // gate things that waste fds, assuming a low system limit
-	}, nil
+	hn := br.HashName()
+	return hn + "-" + base64.URLEncoding.EncodeToString(data[len(hn)+1:])
 }

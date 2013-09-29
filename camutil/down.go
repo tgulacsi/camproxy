@@ -18,12 +18,15 @@ package camutil
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"camlistore.org/pkg/blob"
@@ -34,8 +37,9 @@ import (
 )
 
 type Downloader struct {
-	cl *client.Client
-	dc *cacher.DiskCache
+	cl   *client.Client
+	dc   *cacher.DiskCache
+	args []string
 }
 
 var cachedClient *client.Client
@@ -73,6 +77,11 @@ func NewDownloader(server string) (*Downloader, error) {
 	if Verbose {
 		log.Printf("Using temp blob cache directory %s", down.dc.Root)
 	}
+	if server != "" {
+		down.args = []string{"-server=" + server}
+	} else {
+		down.args = []string{}
+	}
 
 	return down, nil
 }
@@ -87,42 +96,101 @@ func ParseBlobNames(items []blob.Ref, names []string) ([]blob.Ref, error) {
 	for _, arg := range names {
 		br, ok := blob.Parse(arg)
 		if !ok {
-			return nil, fmt.Errorf("Failed to parse argument %q as a blobref.", arg)
+			var e error
+			if br, e = Base64ToRef(arg); e != nil {
+				return nil, e
+			}
 		}
 		items = append(items, br)
 	}
 	return items, nil
 }
 
+func Base64ToRef(arg string) (br blob.Ref, err error) {
+	b := make([]byte, 64)
+	t := make([]byte, 2*len(b))
+	var i, n int
+	i = len(arg)
+	if i > cap(t) {
+		i = cap(t)
+	}
+	t = []byte(arg[:i])
+	i = bytes.IndexByte(t, byte('-'))
+	if i < 0 {
+		err = fmt.Errorf("no - in %q", arg)
+		return
+	}
+	n, err = base64.URLEncoding.Decode(b[:cap(b)], t[i+1:])
+	if err != nil {
+		err = fmt.Errorf("cannot decode %q as base64: %s", t[i+1:], err)
+		return
+	}
+	b = b[:n]
+	copy(t[:i], bytes.ToLower(t[:i]))
+	t = t[:cap(t)]
+	n = 2*len(b) - len(t) + n + 1
+	if n > 0 {
+		t = append(t, make([]byte, n)...)
+	}
+	//log.Printf("t=%q b=%q i=%d n=%d cap(t)=%d", t, b, i, n, cap(t))
+	//log.Printf("b=[%d]%q", len(b), b)
+	//log.Printf("t[i+1:]=[%d]%q", len(t), t[i+1:])
+	n = hex.Encode(t[i+1:], b)
+	arg = string(t[:i+1+n])
+	br, ok := blob.Parse(arg)
+	if !ok {
+		err = fmt.Errorf("cannot parse %q as blobref", arg)
+		return
+	}
+	return br, nil
+}
+
 func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Ref) error {
 	var rc io.ReadCloser
 	var err error
-		for _, br := range items {
+	for _, br := range items {
+		if contents {
+			rc, err = schema.NewFileReader(down.dc, br)
+			if err == nil {
+				rc.(*schema.FileReader).LoadAllChunks()
+			}
+		} else {
+			rc, err = fetch(down.dc, br)
+		}
+		if err != nil {
+			log.Printf("error downloading %q: %s", br, err)
+			args := append(make([]string, 0, len(down.args)+3), down.args...)
 			if contents {
-				rc, err = schema.NewFileReader(down.dc, br)
-				if err == nil {
-					rc.(*schema.FileReader).LoadAllChunks()
-				}
-			} else {
-				rc, err = fetch(down.dc, br)
+				args = append(args, "-contents=true")
 			}
+			if InsecureTLS {
+				args = append(args, "-insecure=true")
+			}
+			args = append(args, br.String())
+			c := exec.Command("camget", args...)
+			c.Stdout = dest
+			errbuf := bytes.NewBuffer(nil)
+			c.Stderr = errbuf
+			log.Printf("calling camget %q", args)
+			err = c.Run()
 			if err != nil {
-				log.Fatal(err)
-			}
-			defer rc.Close()
-			if _, err := io.Copy(dest, rc); err != nil {
-				return fmt.Errorf("Failed reading %q: %v", br, err)
+				return fmt.Errorf("error calling camget %q: %s (%s)", args, errbuf.Bytes(), err)
 			}
 		}
-        return nil
-    }
+		defer rc.Close()
+		if _, err := io.Copy(dest, rc); err != nil {
+			return fmt.Errorf("Failed reading %q: %v", br, err)
+		}
+	}
+	return nil
+}
 
 func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
-		for _, br := range items {
-			if err := smartFetch(down.dc, destDir, br); err != nil {
-				log.Fatal(err)
-			}
+	for _, br := range items {
+		if err := smartFetch(down.dc, destDir, br); err != nil {
+			log.Fatal(err)
 		}
+	}
 	return nil
 }
 
