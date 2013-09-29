@@ -26,6 +26,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -54,8 +55,8 @@ func main() {
 	s := &http.Server{
 		Addr:           *flagListen,
 		Handler:        http.HandlerFunc(handle),
-		ReadTimeout:    10 * time.Second,
-		WriteTimeout:   10 * time.Second,
+		ReadTimeout:    300 * time.Second,
+		WriteTimeout:   300 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
 	defer func() {
@@ -162,11 +163,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer os.RemoveAll(dn)
-		filenames, err := saveMultipartTo(dn, mr)
+
+		filenames, err := saveMultipartTo(dn, mr, r.URL.Query().Get("mtime"))
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+
 		permanode := r.URL.Query().Get("permanode") == "1"
 		short := r.URL.Query().Get("short") == "1"
 		var content, perma blob.Ref
@@ -206,12 +209,24 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func saveMultipartTo(destDir string, mr *multipart.Reader) (filenames []string, err error) {
+func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filenames []string, err error) {
 	var fn string
+	var qmt int64
 	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
 		defer part.Close()
 		filename := part.FileName()
 		if filename == "" {
+			if qmtime == "" && part.FormName() == "mtime" {
+				b := bytes.NewBuffer(make([]byte, 23))
+				if n, err := io.CopyN(b, part, 23); err == nil || err == io.EOF {
+					err = nil
+					if n >= 23 {
+						log.Printf("too big an mtime %q", b)
+					} else {
+						qmtime = b.String()
+					}
+				}
+			}
 			continue
 		}
 		fn = filepath.Join(destDir, filepath.Base(filename))
@@ -220,9 +235,22 @@ func saveMultipartTo(destDir string, mr *multipart.Reader) (filenames []string, 
 			return nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
 		}
 		if _, err = io.Copy(fh, part); err == nil {
+			if qmt == 0 && qmtime != "" {
+				if qmt, err = strconv.ParseInt(qmtime, 10, 64); err != nil {
+					log.Printf("cannot parse mtime %q: %s", qmtime, err)
+					err, qmt, qmtime = nil, 0, ""
+				}
+			}
 			filenames = append(filenames, fh.Name())
 		}
 		fh.Close()
+		log.Printf("qmt=%d", qmt)
+		if err == nil && qmt > 0 {
+			c := exec.Command("touch", "-c", "-t", time.Unix(qmt, 0).Format("200601021504.05"), fn)
+			if out, err := c.CombinedOutput(); err != nil {
+				log.Printf("error 'touch'ing %q: %s (%s)", fn, out, err)
+			}
+		}
 		if err != nil {
 			return nil, fmt.Errorf("error writing to %q: %s", fn, err)
 		}
