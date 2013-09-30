@@ -36,6 +36,7 @@ import (
 	"camlistore.org/pkg/schema"
 )
 
+// Downloader is the struct for downloading file/dir blobs
 type Downloader struct {
 	cl   *client.Client
 	dc   *cacher.DiskCache
@@ -44,6 +45,9 @@ type Downloader struct {
 
 var cachedClient *client.Client
 
+// NewClient returns a new client for the given server. Auth is set up according
+// to the client config (~/.config/camlistore/client-config.json)
+// and the environment variables.
 func NewClient(server string) (*client.Client, error) {
 	if server == "" {
 		server = "localhost:3179"
@@ -59,7 +63,10 @@ func NewClient(server string) (*client.Client, error) {
 	return c, nil
 }
 
-// copied from camlistore.org/cmd/camget
+// The followings are copied from camlistore.org/cmd/camget
+
+// NewDownloader creates a new Downloader (client + properties + disk cache)
+// for the server
 func NewDownloader(server string) (*Downloader, error) {
 	down := new(Downloader)
 	var err error
@@ -89,12 +96,16 @@ func NewDownloader(server string) (*Downloader, error) {
 	return down, nil
 }
 
+// Close closes the downloader (the underlying client)
 func (down *Downloader) Close() {
 	if down != nil && down.dc != nil {
 		down.dc.Clean()
 	}
 }
 
+// ParseBlobNames parses the blob names, appending to items, and returning
+// the expanded slice, and error if happened.
+// This uses blob.Parse, and can decode base64-encoded refs as a plus.
 func ParseBlobNames(items []blob.Ref, names []string) ([]blob.Ref, error) {
 	for _, arg := range names {
 		br, ok := blob.Parse(arg)
@@ -109,6 +120,7 @@ func ParseBlobNames(items []blob.Ref, names []string) ([]blob.Ref, error) {
 	return items, nil
 }
 
+// Base64ToRef decodes a base64-encoded blobref
 func Base64ToRef(arg string) (br blob.Ref, err error) {
 	b := make([]byte, 64)
 	t := make([]byte, 2*len(b))
@@ -148,6 +160,8 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	return br, nil
 }
 
+// Download downloads the blobrefs and writes it to dest
+// Just the JSON schema if contents is false, else the content of the blob.
 func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Ref) error {
 	var rc io.ReadCloser
 	var err error
@@ -189,6 +203,7 @@ func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Re
 	return nil
 }
 
+// Save saves contents of the blobs into destDir as files
 func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
 	for _, br := range items {
 		if err := smartFetch(down.dc, destDir, br); err != nil {

@@ -19,5 +19,8 @@ Package camutil copies some unexported utilities from camlistore.org/cmd/cam{get
 */
 package camutil
 
+// Verbose shall be true for verbose HTTP logging
 var Verbose = false
+
+// InsecureTLS sets client's InsecureTLS
 var InsecureTLS bool

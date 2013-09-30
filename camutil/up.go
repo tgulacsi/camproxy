@@ -27,11 +27,13 @@ import (
 	"camlistore.org/pkg/blob"
 )
 
+// Uploader holds the server and args
 type Uploader struct {
 	server string
 	args   []string
 }
 
+// NewUploader returns a new uploader for uploading files to the given server
 func NewUploader(server string) *Uploader {
 	if server != "" {
 		return &Uploader{server: server, args: []string{"-server=" + server, "file"}}
