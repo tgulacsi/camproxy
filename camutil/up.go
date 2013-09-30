@@ -36,7 +36,7 @@ func NewUploader(server string) *Uploader {
 	if server != "" {
 		return &Uploader{server: server, args: []string{"-server=" + server, "file"}}
 	}
-	return &Uploader{server: server}
+	return &Uploader{server: server, args: []string{"file"}}
 }
 
 // UploadFile uploads the given path (file or directory, recursively), and

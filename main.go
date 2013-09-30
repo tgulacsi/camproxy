@@ -23,6 +23,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -83,6 +84,10 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		items, err := camutil.ParseBlobNames(nil, []string{r.URL.Path[1:]})
 		if err != nil {
 			http.Error(w, err.Error(), 400)
+			return
+		}
+		if len(items) == 0 {
+			http.Error(w, "a blobref is needed!", 400)
 			return
 		}
 		d, err := getDownloader()
@@ -152,23 +157,37 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("error getting uploader to %q: %s", server, err), 500)
 			return
 		}
-		mr, err := r.MultipartReader()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", err), 400)
-			return
-		}
-		dn, err := ioutil.TempDir("", "camproxy-")
+		dn, err := ioutil.TempDir("", "camproxy")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("cannot create temporary directory: %s", err), 500)
 			return
 		}
 		defer os.RemoveAll(dn)
 
-		filenames, err := saveMultipartTo(dn, mr, r.URL.Query().Get("mtime"))
+		var filenames []string
+
+		switch r.Header.Get("Content-Type") {
+		case "multipart/form", "application/x-www-form-urlencoded":
+			mr, err := r.MultipartReader()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", err), 400)
+				return
+			}
+			filenames, err = saveMultipartTo(dn, mr, r.URL.Query().Get("mtime"))
+		default: // legacy direct upload
+			var fn string
+			fn, err = saveDirectTo(dn, r)
+			//log.Printf("direct: %s", err)
+			if fn != "" {
+				filenames = append(filenames, fn)
+			}
+		}
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
 		}
+
+		log.Printf("uploading %q", filenames)
 
 		permanode := r.URL.Query().Get("permanode") == "1"
 		short := r.URL.Query().Get("short") == "1"
@@ -187,7 +206,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.Header().Add("Content-Type", "text/plain")
-		b := bytes.NewBuffer(make([]byte, 128))
+		b := bytes.NewBuffer(make([]byte, 0, 128))
 		if short {
 			b.WriteString(camutil.RefToBase64(content))
 		} else {
@@ -207,6 +226,41 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method must be GET/POST", 405)
 	}
+}
+
+func saveDirectTo(destDir string, r *http.Request) (filename string, err error) {
+	//ct := r.Header.Get("Content-Type")
+	log.Printf("headers: %q", r.Header)
+	cd := r.Header.Get("Content-Disposition")
+	var fh *os.File
+	fn := ""
+	if cd != "" {
+		_, params, err := mime.ParseMediaType(cd)
+		if err != nil {
+			log.Printf("error parsing Content-Disposition %q: %s", cd, err)
+		} else {
+			fn = params["filename"]
+		}
+	}
+	//log.Printf("creating file %q in %q", fn, destDir)
+	if fn == "" {
+		log.Printf("cannot determine filename from %q", cd)
+		fh, err = ioutil.TempFile(destDir, "file-")
+	} else {
+		//log.Printf("fn=%q", fn)
+		fn = filepath.Join(destDir, filepath.Base(fn))
+		fh, err = os.Create(fn)
+	}
+	if err != nil {
+		return "", fmt.Errorf("error creating temp file %q: %s", fn, err)
+	}
+	defer fh.Close()
+	//log.Printf("saving request body to %q...", fh.Name())
+	_, err = io.Copy(fh, r.Body)
+	if err != nil {
+		log.Printf("saving request body to %q: %s", fh.Name(), err)
+	}
+	return fh.Name(), err
 }
 
 func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filenames []string, err error) {

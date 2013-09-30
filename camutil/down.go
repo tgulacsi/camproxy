@@ -45,6 +45,9 @@ type Downloader struct {
 var cachedClient *client.Client
 
 func NewClient(server string) (*client.Client, error) {
+	if server == "" {
+		server = "localhost:3179"
+	}
 	if cachedClient != nil {
 		return cachedClient, nil
 	}
@@ -174,8 +177,9 @@ func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Re
 			log.Printf("calling camget %q", args)
 			err = c.Run()
 			if err != nil {
-				return fmt.Errorf("error calling camget %q: %s (%s)", args, errbuf.Bytes(), err)
+				err = fmt.Errorf("error calling camget %q: %s (%s)", args, errbuf.Bytes(), err)
 			}
+			return err
 		}
 		defer rc.Close()
 		if _, err := io.Copy(dest, rc); err != nil {
@@ -329,7 +333,6 @@ func smartFetch(src blob.StreamingFetcher, targ string, br blob.Ref) error {
 	default:
 		return errors.New("unknown blob type: " + b.Type())
 	}
-	panic("unreachable")
 }
 
 func setFileMeta(name string, blob *schema.Blob) error {
