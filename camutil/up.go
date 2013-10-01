@@ -25,25 +25,30 @@ import (
 	"path/filepath"
 
 	"camlistore.org/pkg/blob"
+	"camlistore.org/pkg/syncutil"
 )
 
 // Uploader holds the server and args
 type Uploader struct {
 	server string
 	args   []string
+	gate   *syncutil.Gate
 }
 
 // NewUploader returns a new uploader for uploading files to the given server
 func NewUploader(server string) *Uploader {
+	u := &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8)}
 	if server != "" {
-		return &Uploader{server: server, args: []string{"-server=" + server, "file"}}
+		u.args = []string{"-server=" + server, "file"}
 	}
-	return &Uploader{server: server, args: []string{"file"}}
+	return u
 }
 
 // UploadFile uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
 func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.Ref, err error) {
+	u.gate.Start()
+	defer u.gate.Done()
 	i := len(u.args) + 2
 	if permanode {
 		i++
