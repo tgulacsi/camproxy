@@ -29,13 +29,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/client"
 
-	"bitbucket.org/taruti/mimemagic"
 	"github.com/tgulacsi/camproxy/camutil"
 )
 
@@ -66,6 +64,8 @@ func main() {
 			cachedDownloader.Close()
 		}
 	}()
+	mimeCache = camutil.NewMimeCache(filepath.Join(os.TempDir(), "mimecache.kv"), 0)
+	defer mimeCache.Close()
 	log.Printf("listening on %q using Camlistore server at %q", s.Addr, server)
 	log.Fatal(s.ListenAndServe())
 }
@@ -105,6 +105,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			okMime = r.URL.Query().Get("mimeType")
 			if 1 == len(items) {
 				nm = camutil.RefToBase64(items[0])
+				if okMime == "" {
+					okMime = mimeCache.Get(nm)
+				}
 			}
 		}
 		// TODO(gt): retrieve proper mime-type
@@ -172,7 +175,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		}
 		defer os.RemoveAll(dn)
 
-		var filenames []string
+		var filenames, mimetypes []string
 
 		ct := r.Header.Get("Content-Type")
 		if ct, _, err = mime.ParseMediaType(ct); err != nil {
@@ -190,13 +193,14 @@ func handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", err), 400)
 				return
 			}
-			filenames, err = saveMultipartTo(dn, mr, r.URL.Query().Get("mtime"))
+			filenames, mimetypes, err = saveMultipartTo(dn, mr, r.URL.Query().Get("mtime"))
 		default: // legacy direct upload
-			var fn string
-			fn, err = saveDirectTo(dn, r)
+			var fn, mime string
+			fn, mime, err = saveDirectTo(dn, r)
 			//log.Printf("direct: %s", err)
 			if fn != "" {
 				filenames = append(filenames, fn)
+				mimetypes = append(mimetypes, mime)
 			}
 		}
 		if err != nil {
@@ -204,7 +208,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("uploading %q", filenames)
+		log.Printf("uploading %q %q", filenames, mimetypes)
 
 		permanode := r.URL.Query().Get("permanode") == "1"
 		short := r.URL.Query().Get("short") == "1"
@@ -222,10 +226,15 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("error uploading %q: %s", filenames, err), 500)
 			return
 		}
+		// store mime types
+		shortKey := camutil.RefToBase64(content)
+		if len(filenames) == 1 && len(mimetypes) == 1 && mimetypes[0] != "" {
+			mimeCache.Set(shortKey, mimetypes[0])
+		}
 		w.Header().Add("Content-Type", "text/plain")
 		b := bytes.NewBuffer(make([]byte, 0, 128))
 		if short {
-			b.WriteString(camutil.RefToBase64(content))
+			b.WriteString(shortKey)
 		} else {
 			b.WriteString(content.String())
 		}
@@ -245,8 +254,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func saveDirectTo(destDir string, r *http.Request) (filename string, err error) {
-	//ct := r.Header.Get("Content-Type")
+func saveDirectTo(destDir string, r *http.Request) (filename, mimetype string, err error) {
+	mimetype = r.Header.Get("Content-Type")
 	log.Printf("headers: %q", r.Header)
 	cd := r.Header.Get("Content-Disposition")
 	var fh *os.File
@@ -269,7 +278,7 @@ func saveDirectTo(destDir string, r *http.Request) (filename string, err error) 
 		fh, err = os.Create(fn)
 	}
 	if err != nil {
-		return "", fmt.Errorf("error creating temp file %q: %s", fn, err)
+		return "", "", fmt.Errorf("error creating temp file %q: %s", fn, err)
 	}
 	defer fh.Close()
 	//log.Printf("saving request body to %q...", fh.Name())
@@ -277,10 +286,11 @@ func saveDirectTo(destDir string, r *http.Request) (filename string, err error) 
 	if err != nil {
 		log.Printf("saving request body to %q: %s", fh.Name(), err)
 	}
-	return fh.Name(), err
+	filename = fh.Name()
+	return
 }
 
-func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filenames []string, err error) {
+func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filenames, mimetypes []string, err error) {
 	var fn string
 	var qmt int64
 	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
@@ -303,7 +313,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 		fn = filepath.Join(destDir, filepath.Base(filename))
 		fh, err := os.Create(fn)
 		if err != nil {
-			return nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
+			return nil, nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
 		}
 		if _, err = io.Copy(fh, part); err == nil {
 			if qmt == 0 && qmtime != "" {
@@ -313,6 +323,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 				}
 			}
 			filenames = append(filenames, fh.Name())
+			mimetypes = append(mimetypes, part.Header.Get("Content-Type"))
 		}
 		fh.Close()
 		log.Printf("qmt=%d", qmt)
@@ -323,7 +334,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			}
 		}
 		if err != nil {
-			return nil, fmt.Errorf("error writing to %q: %s", fn, err)
+			return nil, nil, fmt.Errorf("error writing to %q: %s", fn, err)
 		}
 	}
 	if err == io.EOF {
@@ -332,8 +343,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 	return
 }
 
-var mimeCache = make(map[string]string, 16)
-var mimeCacheMtx sync.Mutex
+var mimeCache *camutil.MimeCache
 
 type respWriter struct {
 	http.ResponseWriter
@@ -343,11 +353,11 @@ type respWriter struct {
 }
 
 func newRespWriter(w http.ResponseWriter, name, okMime string) *respWriter {
-	mimeCacheMtx.Lock()
-	defer mimeCacheMtx.Unlock()
-	//log.Printf("mimeCache: %q", mimeCache)
-	if m, ok := mimeCache[name]; ok {
-		okMime = m
+	if name != "" && (okMime == "" || okMime == "application/octet-stream") {
+		m := mimeCache.Get(name)
+		if m != "" {
+			okMime = m
+		}
 	}
 	return &respWriter{w, name, okMime, false, nil}
 }
@@ -361,15 +371,10 @@ func (w *respWriter) Write(p []byte) (int, error) {
 			if len(w.buf) < 1024 {
 				return len(p), nil
 			}
-			w.okMime = mimemagic.Match(w.okMime, w.buf)
-			mimeCacheMtx.Lock()
-			if len(mimeCache) > 1000 {
-				for k := range mimeCache {
-					delete(mimeCache, k)
-				}
+			w.okMime = camutil.MatchMime(w.okMime, w.buf)
+			if w.name != "" && w.okMime != "" {
+				mimeCache.Set(w.name, w.okMime)
 			}
-			mimeCache[w.name] = w.okMime
-			mimeCacheMtx.Unlock()
 			p, w.buf = w.buf, nil
 		}
 		if w.okMime != "" {

@@ -7,6 +7,11 @@ camget is optional).
 I have a legacy AIX 5.3 system, without go - thus camlistore is not running it.
 But I love Camlistore's deduplication and versatility of backends.
 
+### Warning
+As my primary usage is uploading and downloading *single* files, and have only
+some vague idea about handling directories/static-sets (download as tar/zip),
+this usage is absolutely unhandled yet.
+
 ## Usage ##
     CAMLI_AUTH=userpass:login:passwd camproxy [-server=https://camli.myserver.net] [-listen=:3128]
 Thus
