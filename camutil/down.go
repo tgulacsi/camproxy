@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/cacher"
@@ -43,7 +44,8 @@ type Downloader struct {
 	args []string
 }
 
-var cachedClient *client.Client
+var cachedClient = make(map[string]*client.Client, 1)
+var cachedClientMtx = new(sync.Mutex)
 
 // NewClient returns a new client for the given server. Auth is set up according
 // to the client config (~/.config/camlistore/client-config.json)
@@ -52,23 +54,36 @@ func NewClient(server string) (*client.Client, error) {
 	if server == "" {
 		server = "localhost:3179"
 	}
-	if cachedClient != nil {
-		return cachedClient, nil
+	cachedClientMtx.Lock()
+	defer cachedClientMtx.Unlock()
+	c, ok := cachedClient[server]
+	if ok {
+		return c, nil
 	}
-	c := client.New(server)
+	c = client.New(server)
 	if err := c.SetupAuth(); err != nil {
 		return nil, err
 	}
-	cachedClient = c
+	cachedClient[server] = c
 	return c, nil
 }
+
+var cachedDownloader = make(map[string]*Downloader, 1)
+var cachedDownloaderMtx = new(sync.Mutex)
 
 // The followings are copied from camlistore.org/cmd/camget
 
 // NewDownloader creates a new Downloader (client + properties + disk cache)
 // for the server
 func NewDownloader(server string) (*Downloader, error) {
-	down := new(Downloader)
+	cachedDownloaderMtx.Lock()
+	defer cachedDownloaderMtx.Unlock()
+	down, ok := cachedDownloader[server]
+	if ok {
+		return down, nil
+	}
+
+	down = new(Downloader)
 	var err error
 	if down.cl, err = NewClient(server); err != nil {
 		return nil, err
@@ -93,6 +108,7 @@ func NewDownloader(server string) (*Downloader, error) {
 		down.args = []string{}
 	}
 
+	cachedDownloader[server] = down
 	return down, nil
 }
 

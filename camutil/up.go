@@ -20,11 +20,14 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"os/exec"
 	"path/filepath"
+	"time"
 
 	"camlistore.org/pkg/blob"
+	"camlistore.org/pkg/schema"
 	"camlistore.org/pkg/syncutil"
 )
 
@@ -57,29 +60,60 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 	if permanode {
 		args = append(args, "--permanode")
 	}
+	var (
+		rc   io.ReadCloser
+		out  []byte
+		blb  *schema.Blob
+		down *Downloader
+	)
 	dir, base := filepath.Split(path)
 	args = append(args, base)
-	log.Printf("camput %s", args)
-	c := exec.Command("camput", args...)
-	c.Dir = dir
-	errbuf := bytes.NewBuffer(nil)
-	c.Stderr = errbuf
-	out, err := c.Output()
-	if err != nil {
-		err = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
-		return
-	}
-	var br, zbr blob.Ref
-	var ok bool
-	err = nil
-	// the last line is the permanode ref, the first is the content
-	for _, line := range bytes.Split(bytes.TrimSpace(out), []byte{'\n'}) {
-		if br, ok = blob.Parse(string(line)); ok {
-			if content == zbr {
-				content = br
-			} else {
-				perma = br
+	for i := 0; i < 10; i++ {
+		log.Printf("camput %s", args)
+		c := exec.Command("camput", args...)
+		c.Dir = dir
+		errbuf := bytes.NewBuffer(nil)
+		c.Stderr = errbuf
+		out, err = c.Output()
+		if err != nil {
+			err = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
+			return
+		}
+		var br, zbr blob.Ref
+		var ok bool
+		err = nil
+		// the last line is the permanode ref, the first is the content
+		for _, line := range bytes.Split(bytes.TrimSpace(out), []byte{'\n'}) {
+			if br, ok = blob.Parse(string(line)); ok {
+				if content == zbr {
+					content = br
+				} else {
+					perma = br
+				}
 			}
+		}
+		if down == nil {
+			if i > 0 {
+				break
+			}
+			if down, err = NewDownloader(u.server); err != nil {
+				log.Printf("cannot get downloader for checking uploads: %s", err)
+				err = nil
+				return
+			}
+		}
+		if rc, err = fetch(down.dc, content); err == nil {
+			blb, err = schema.BlobFromReader(content, rc)
+			rc.Close()
+			if err == nil {
+				if len(blb.ByteParts()) > 0 {
+					return
+				}
+				log.Printf("blob[%s].parts is empty! (%s)", content, blb.JSON())
+			} else {
+				log.Printf("error getting back blob %q: %s", content, err)
+			}
+			time.Sleep(time.Duration(i) * time.Second)
 		}
 	}
 	return
