@@ -41,6 +41,7 @@ var (
 	flagVerbose     = flag.Bool("v", false, "verbose logging")
 	flagInsecureTLS = flag.Bool("k", false, "allow insecure TLS")
 	//flagServer      = flag.String("server", ":3179", "Camlistore server address")
+	flagNoAuth = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
 	flagListen = flag.String("listen", ":3178", "listen on")
 
 	server string
@@ -59,10 +60,14 @@ func main() {
 		WriteTimeout:   300 * time.Second,
 		MaxHeaderBytes: 1 << 20,
 	}
-	defer func() {
-		if cachedDownloader != nil {
-			cachedDownloader.Close()
+	if !*flagNoAuth {
+		camliAuth := os.Getenv("CAMLI_AUTH")
+		if camliAuth != "" {
+			s.Handler = camutil.SetupBasicAuthChecker(handle, camliAuth)
 		}
+	}
+	defer func() {
+		camutil.Close()
 	}()
 	mimeCache = camutil.NewMimeCache(filepath.Join(os.TempDir(), "mimecache.kv"), 0)
 	defer mimeCache.Close()
@@ -394,25 +399,10 @@ func (w *respWriter) Close() (err error) {
 	return
 }
 
-var cachedUploader *camutil.Uploader
-var cachedDownloader *camutil.Downloader
-
 func getUploader() (*camutil.Uploader, error) {
-	if cachedUploader != nil {
-		return cachedUploader, nil
-	}
-	cachedUploader = camutil.NewUploader(server)
-	return cachedUploader, nil
+	return camutil.NewUploader(server), nil
 }
 
 func getDownloader() (*camutil.Downloader, error) {
-	if cachedDownloader != nil {
-		return cachedDownloader, nil
-	}
-	d, err := camutil.NewDownloader(server)
-	if err != nil {
-		return nil, err
-	}
-	cachedDownloader = d
-	return d, nil
+	return camutil.NewDownloader(server)
 }

@@ -29,6 +29,7 @@ import (
 // DefaultMaxMemMimeCacheSize is the maximum size of in-memory mime cache
 var DefaultMaxMemMimeCacheSize = 1024
 
+// MimeCache is the in-memory (LRU) and disk-based (kv) cache of mime types
 type MimeCache struct {
 	mem      *lru.Cache
 	db       index.Storage
@@ -51,6 +52,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 	return mc
 }
 
+// Close closes the probably open disk db (kv)
 func (mc *MimeCache) Close() error {
 	if mc.dbcloser != nil {
 		return mc.Close()

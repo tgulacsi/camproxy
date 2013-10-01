@@ -24,6 +24,7 @@ import (
 	"log"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"camlistore.org/pkg/blob"
@@ -38,12 +39,38 @@ type Uploader struct {
 	gate   *syncutil.Gate
 }
 
+var cachedUploader = make(map[string]*Uploader, 1)
+var cachedUploaderMtx = new(sync.Mutex)
+
+// Close closes the probably opened cached Uploaders and Downloaders
+func Close() error {
+	cachedUploaderMtx.Lock()
+	defer cachedUploaderMtx.Unlock()
+	for k := range cachedUploader {
+		delete(cachedUploader, k)
+	}
+	cachedDownloaderMtx.Lock()
+	defer cachedDownloaderMtx.Unlock()
+	for k := range cachedDownloader {
+		cachedDownloader[k].Close()
+		delete(cachedDownloader, k)
+	}
+	return nil
+}
+
 // NewUploader returns a new uploader for uploading files to the given server
 func NewUploader(server string) *Uploader {
-	u := &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8)}
+	cachedUploaderMtx.Lock()
+	defer cachedUploaderMtx.Unlock()
+	u, ok := cachedUploader[server]
+	if ok {
+		return u
+	}
+	u = &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8)}
 	if server != "" {
 		u.args = []string{"-server=" + server, "file"}
 	}
+	cachedUploader[server] = u
 	return u
 }
 
