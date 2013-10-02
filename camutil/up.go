@@ -19,9 +19,11 @@ package camutil
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
@@ -38,6 +40,9 @@ type Uploader struct {
 	args   []string
 	gate   *syncutil.Gate
 }
+
+// FileIsEmpty is the error for zero length files
+var FileIsEmpty = errors.New("File is empty")
 
 var cachedUploader = make(map[string]*Uploader, 1)
 var cachedUploaderMtx = new(sync.Mutex)
@@ -77,6 +82,20 @@ func NewUploader(server string) *Uploader {
 // UploadFile uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
 func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.Ref, err error) {
+	fh, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	fi, err := fh.Stat()
+	fh.Close()
+	if err != nil {
+		return
+	}
+
+	if fi.Size() <= 0 {
+		err = FileIsEmpty
+		return
+	}
 	u.gate.Start()
 	defer u.gate.Done()
 	i := len(u.args) + 2
@@ -96,6 +115,9 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 	dir, base := filepath.Split(path)
 	args = append(args, base)
 	for i := 0; i < 10; i++ {
+		if i > 0 {
+			time.Sleep(time.Duration(i) * time.Second)
+		}
 		log.Printf("camput %s", args)
 		c := exec.Command("camput", args...)
 		c.Dir = dir
@@ -136,11 +158,11 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 				if len(blb.ByteParts()) > 0 {
 					return
 				}
-				log.Printf("blob[%s].parts is empty! (%s)", content, blb.JSON())
+				err = fmt.Errorf("blob[%s].parts is empty!", content)
+				log.Println(err.Error() + "(" + blb.JSON() + ")")
 			} else {
 				log.Printf("error getting back blob %q: %s", content, err)
 			}
-			time.Sleep(time.Duration(i) * time.Second)
 		}
 	}
 	return
