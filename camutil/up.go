@@ -64,7 +64,7 @@ func Close() error {
 }
 
 // NewUploader returns a new uploader for uploading files to the given server
-func NewUploader(server string, forgeCtime bool) *Uploader {
+func NewUploader(server string, capCtime bool) *Uploader {
 	cachedUploaderMtx.Lock()
 	defer cachedUploaderMtx.Unlock()
 	u, ok := cachedUploader[server]
@@ -75,8 +75,8 @@ func NewUploader(server string, forgeCtime bool) *Uploader {
 	if server != "" {
 		u.args = []string{"-server=" + server, "file"}
 	}
-	if forgeCtime {
-		u.args = append(u.args, "-forgectime")
+	if capCtime {
+		u.args = append(u.args, "-capctime")
 	}
 	cachedUploader[server] = u
 	return u

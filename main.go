@@ -41,9 +41,9 @@ var (
 	flagVerbose     = flag.Bool("v", false, "verbose logging")
 	flagInsecureTLS = flag.Bool("k", false, "allow insecure TLS")
 	//flagServer      = flag.String("server", ":3179", "Camlistore server address")
-	flagForgeCtime = flag.Bool("forgectime", false, "forge ctime to be less or equal to mtime")
-	flagNoAuth     = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
-	flagListen     = flag.String("listen", ":3178", "listen on")
+	flagCapCtime = flag.Bool("capctime", false, "forge ctime to be less or equal to mtime")
+	flagNoAuth   = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
+	flagListen   = flag.String("listen", ":3178", "listen on")
 	flagParanoid = flag.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
 
 	server string
@@ -170,7 +170,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			}
 		*/
 	case "POST":
-		u, err := getUploader(*flagForgeCtime)
+		u, err := getUploader(*flagCapCtime)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error getting uploader to %q: %s", server, err), 500)
 			return
@@ -277,8 +277,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveDirectTo(destDir string, r *http.Request) (filename, mimetype string, err error) {
-	mimetype = r.Header.Get("Content-Type")
 	log.Printf("headers: %q", r.Header)
+	mimetype = r.Header.Get("Content-Type")
+	lastmod := parseLastModified(r.Header.Get("Last-Modified"), r.URL.Query().Get("mtime"))
 	cd := r.Header.Get("Content-Disposition")
 	var fh *os.File
 	fn := ""
@@ -309,25 +310,27 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimetype string, e
 		log.Printf("saving request body to %q: %s", fh.Name(), err)
 	}
 	filename = fh.Name()
+	if !lastmod.IsZero() {
+		log.Printf("setting mtime on %q to %q", filename, lastmod.Format(time.RFC3339))
+		if err = os.Chtimes(filename, lastmod, lastmod); err != nil {
+			log.Printf("error chtimes %q: %s", filename, err)
+		}
+	}
 	return
 }
 
 func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filenames, mimetypes []string, err error) {
 	var fn string
-	var qmt int64
+	var lastmod time.Time
 	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
 		defer part.Close()
 		filename := part.FileName()
 		if filename == "" {
-			if qmtime == "" && part.FormName() == "mtime" {
+			if part.FormName() == "mtime" {
 				b := bytes.NewBuffer(make([]byte, 23))
-				if n, err := io.CopyN(b, part, 23); err == nil || err == io.EOF {
+				if _, err := io.CopyN(b, part, 23); err == nil || err == io.EOF {
 					err = nil
-					if n >= 23 {
-						log.Printf("too big an mtime %q", b)
-					} else {
-						qmtime = b.String()
-					}
+					qmtime = b.String()
 				}
 			}
 			continue
@@ -338,31 +341,48 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			return nil, nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
 		}
 		if _, err = io.Copy(fh, part); err == nil {
-			if qmt == 0 && qmtime != "" {
-				if qmt, err = strconv.ParseInt(qmtime, 10, 64); err != nil {
-					log.Printf("cannot parse mtime %q: %s", qmtime, err)
-					err, qmt, qmtime = nil, 0, ""
-				}
-			}
 			filenames = append(filenames, fh.Name())
 			mimetypes = append(mimetypes, part.Header.Get("Content-Type"))
 		}
 		fh.Close()
-		log.Printf("qmt=%d", qmt)
-		if err == nil && qmt > 0 {
-			t := time.Unix(qmt, 0)
-			if err = os.Chtimes(fn, t, t); err != nil {
-				log.Printf("error chtimes %q: %s", fn, err)
-			}
-		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("error writing to %q: %s", fn, err)
+		}
+		lastmod = parseLastModified(part.Header.Get("Last-Modified"), qmtime)
+		if !lastmod.IsZero() {
+			log.Printf("setting mtime on %q to %q", fn, lastmod.Format(time.RFC3339))
+			if e := os.Chtimes(fn, lastmod, lastmod); e != nil {
+				log.Printf("error chtimes %q: %s", fn, e)
+			}
 		}
 	}
 	if err == io.EOF {
 		err = nil
 	}
 	return
+}
+
+func parseLastModified(lastModHeader, mtimeHeader string) time.Time {
+	var lastmod time.Time
+	var err error
+	if lastModHeader != "" {
+		if lastmod, err = time.Parse(time.RFC1123, lastModHeader); err == nil {
+			return lastmod
+		}
+	}
+	if mtimeHeader == "" {
+		return lastmod
+	}
+	if len(mtimeHeader) >= 23 {
+		log.Printf("too big an mtime %q", mtimeHeader)
+		return lastmod
+	}
+	if qmt, err := strconv.ParseInt(mtimeHeader, 10, 64); err != nil {
+		log.Printf("cannot parse mtime %q: %s", mtimeHeader, err)
+	} else {
+		return time.Unix(qmt, 0)
+	}
+	return lastmod
 }
 
 var mimeCache *camutil.MimeCache
@@ -416,8 +436,8 @@ func (w *respWriter) Close() (err error) {
 	return
 }
 
-func getUploader(forgeCtime bool) (*camutil.Uploader, error) {
-	return camutil.NewUploader(server, forgeCtime), nil
+func getUploader(capCtime bool) (*camutil.Uploader, error) {
+	return camutil.NewUploader(server, capCtime), nil
 }
 
 func getDownloader() (*camutil.Downloader, error) {
