@@ -41,8 +41,9 @@ var (
 	flagVerbose     = flag.Bool("v", false, "verbose logging")
 	flagInsecureTLS = flag.Bool("k", false, "allow insecure TLS")
 	//flagServer      = flag.String("server", ":3179", "Camlistore server address")
-	flagNoAuth = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
-	flagListen = flag.String("listen", ":3178", "listen on")
+	flagForgeCtime = flag.Bool("forgectime", false, "forge ctime to be less or equal to mtime")
+	flagNoAuth     = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
+	flagListen     = flag.String("listen", ":3178", "listen on")
 
 	server string
 )
@@ -168,7 +169,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			}
 		*/
 	case "POST":
-		u, err := getUploader()
+		u, err := getUploader(*flagForgeCtime)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error getting uploader to %q: %s", server, err), 500)
 			return
@@ -399,8 +400,8 @@ func (w *respWriter) Close() (err error) {
 	return
 }
 
-func getUploader() (*camutil.Uploader, error) {
-	return camutil.NewUploader(server), nil
+func getUploader(forgeCtime bool) (*camutil.Uploader, error) {
+	return camutil.NewUploader(server, forgeCtime), nil
 }
 
 func getDownloader() (*camutil.Downloader, error) {
