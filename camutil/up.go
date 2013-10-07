@@ -162,7 +162,7 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 					return
 				}
 				err = fmt.Errorf("blob[%s].parts is empty!", content)
-				log.Printf("blob[%s].parts is empty! (%s)", content, blb.JSON())
+				log.Println(err.Error() + "(" + blb.JSON() + ")")
 			} else {
 				log.Printf("error getting back blob %q: %s", content, err)
 			}

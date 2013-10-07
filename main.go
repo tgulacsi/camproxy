@@ -44,6 +44,7 @@ var (
 	flagForgeCtime = flag.Bool("forgectime", false, "forge ctime to be less or equal to mtime")
 	flagNoAuth     = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
 	flagListen     = flag.String("listen", ":3178", "listen on")
+	flagParanoid = flag.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
 
 	server string
 )
@@ -179,7 +180,17 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("cannot create temporary directory: %s", err), 500)
 			return
 		}
-		defer os.RemoveAll(dn)
+		var paraSource, paraDest string
+		defer func() {
+			if paraSource != "" && paraDest != "" { // save at last
+				os.MkdirAll(filepath.Dir(paraDest), 0700)
+				log.Printf("Paranoid copying %q to %q", paraSource, paraDest)
+				if err = camutil.LinkOrCopy(paraSource, paraDest); err != nil {
+					log.Printf("error copying %q to %q: %s", paraSource, paraDest, err)
+				}
+			}
+			os.RemoveAll(dn)
+		}()
 
 		var filenames, mimetypes []string
 
@@ -234,8 +245,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		}
 		// store mime types
 		shortKey := camutil.RefToBase64(content)
-		if len(filenames) == 1 && len(mimetypes) == 1 && mimetypes[0] != "" {
-			mimeCache.Set(shortKey, mimetypes[0])
+		if len(filenames) == 1 {
+			if len(mimetypes) == 1 && mimetypes[0] != "" {
+				mimeCache.Set(shortKey, mimetypes[0])
+			}
+			if *flagParanoid != "" {
+				paraSource, paraDest = filenames[0], getParanoidPath(content)
+			}
 		}
 		w.Header().Add("Content-Type", "text/plain")
 		b := bytes.NewBuffer(make([]byte, 0, 128))
@@ -406,4 +422,18 @@ func getUploader(forgeCtime bool) (*camutil.Uploader, error) {
 
 func getDownloader() (*camutil.Downloader, error) {
 	return camutil.NewDownloader(server)
+}
+
+func getParanoidPath(br blob.Ref) string {
+	if *flagParanoid == "" || !br.Valid() {
+		return ""
+	}
+	txt := br.String()
+	for i := 0; i < len(txt); i++ {
+		if txt[i] == '-' {
+			hsh := txt[i+1:]
+			return filepath.Join(*flagParanoid, hsh[:3], hsh[3:6], txt+".dat")
+		}
+	}
+	return ""
 }
