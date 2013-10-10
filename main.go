@@ -210,7 +210,11 @@ func handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", err), 400)
 				return
 			}
-			filenames, mimetypes, err = saveMultipartTo(dn, mr, r.URL.Query().Get("mtime"))
+			qmtime := r.URL.Query().Get("mtime")
+			if qmtime == "" {
+				qmtime = r.Header.Get("Last-Modified")
+			}
+			filenames, mimetypes, err = saveMultipartTo(dn, mr, qmtime)
 		default: // legacy direct upload
 			var fn, mime string
 			fn, mime, err = saveDirectTo(dn, r)
@@ -363,18 +367,24 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 }
 
 func parseLastModified(lastModHeader, mtimeHeader string) time.Time {
-	var lastmod time.Time
-	var err error
+	var (
+		lastmod time.Time
+		ok      bool
+	)
 	if lastModHeader != "" {
-		if lastmod, err = time.Parse(time.RFC1123, lastModHeader); err == nil {
+		if lastmod, ok = timeParse(lastModHeader); ok {
 			return lastmod
 		}
 	}
 	if mtimeHeader == "" {
+		log.Printf("no mtimeHeader")
 		return lastmod
 	}
 	if len(mtimeHeader) >= 23 {
-		log.Printf("too big an mtime %q", mtimeHeader)
+		if lastmod, ok = timeParse(mtimeHeader); ok {
+			return lastmod
+		}
+		log.Printf("too big an mtime %q, and not RFC1123-compliant", mtimeHeader)
 		return lastmod
 	}
 	if qmt, err := strconv.ParseInt(mtimeHeader, 10, 64); err != nil {
@@ -456,4 +466,18 @@ func getParanoidPath(br blob.Ref) string {
 		}
 	}
 	return ""
+}
+
+func timeParse(text string) (time.Time, bool) {
+	var (
+		t   time.Time
+		ok  bool
+		err error
+	)
+	for _, pattern := range []string{time.RFC1123, time.UnixDate, time.RFC3339} {
+		if t, err = time.Parse(pattern, text); err == nil {
+			return t, ok
+		}
+	}
+	return t, false
 }

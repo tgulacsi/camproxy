@@ -38,6 +38,7 @@ import (
 type Uploader struct {
 	server string
 	args   []string
+	env    []string
 	gate   *syncutil.Gate
 }
 
@@ -77,6 +78,9 @@ func NewUploader(server string, capCtime bool) *Uploader {
 	}
 	if capCtime {
 		u.args = append(u.args, "-capctime")
+		if os.Getenv("CAMLI_DEBUG") != "true" { // -capctime needs CAMLI_DEBUG=true
+			u.env = append(os.Environ(), "CAMLI_DEBUG=true")
+		}
 	}
 	cachedUploader[server] = u
 	return u
@@ -124,6 +128,7 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 		log.Printf("camput %s", args)
 		c := exec.Command("camput", args...)
 		c.Dir = dir
+		c.Env = u.env
 		errbuf := bytes.NewBuffer(nil)
 		c.Stderr = errbuf
 		out, err = c.Output()
