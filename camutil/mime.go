@@ -17,13 +17,12 @@ limitations under the License.
 package camutil
 
 import (
-	"io"
 	"log"
 
 	"bitbucket.org/taruti/mimemagic"
-	"camlistore.org/pkg/index"
 	"camlistore.org/pkg/index/kvfile"
 	"camlistore.org/pkg/lru"
+	"camlistore.org/pkg/sorted"
 )
 
 // DefaultMaxMemMimeCacheSize is the maximum size of in-memory mime cache
@@ -31,9 +30,8 @@ var DefaultMaxMemMimeCacheSize = 1024
 
 // MimeCache is the in-memory (LRU) and disk-based (kv) cache of mime types
 type MimeCache struct {
-	mem      *lru.Cache
-	db       index.Storage
-	dbcloser io.Closer
+	mem *lru.Cache
+	db  sorted.KeyValue
 }
 
 // NewMimeCache creates a new mime cache - in-memory + on-disk (persistent)
@@ -45,7 +43,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 	mc.mem = lru.New(maxMemCacheSize)
 
 	var err error
-	if mc.db, mc.dbcloser, err = kvfile.NewStorage(filename); err != nil {
+	if mc.db, err = kvfile.NewStorage(filename); err != nil {
 		log.Printf("cannot open/create db %q: %s", filename, err)
 		mc.db = nil
 	}
@@ -54,8 +52,8 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 
 // Close closes the probably open disk db (kv)
 func (mc *MimeCache) Close() error {
-	if mc.dbcloser != nil {
-		return mc.Close()
+	if mc.db != nil {
+		return mc.db.Close()
 	}
 	return nil
 }
