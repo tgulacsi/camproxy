@@ -20,9 +20,9 @@ import (
 	"log"
 
 	"bitbucket.org/taruti/mimemagic"
-	"camlistore.org/pkg/index/kvfile"
 	"camlistore.org/pkg/lru"
 	"camlistore.org/pkg/sorted"
+	"camlistore.org/pkg/sorted/kvfile"
 )
 
 // DefaultMaxMemMimeCacheSize is the maximum size of in-memory mime cache
