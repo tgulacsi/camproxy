@@ -40,6 +40,7 @@ type Uploader struct {
 	args   []string
 	env    []string
 	gate   *syncutil.Gate
+	mtx    sync.Mutex
 }
 
 // FileIsEmpty is the error for zero length files
@@ -131,7 +132,12 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 		c.Env = u.env
 		errbuf := bytes.NewBuffer(nil)
 		c.Stderr = errbuf
-		out, err = c.Output()
+		// serialize camput calls (have cache)
+		func() {
+			u.mtx.Lock()
+			defer u.mtx.Unlock()
+			out, err = c.Output()
+		}()
 		if err != nil {
 			err = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
 			return
