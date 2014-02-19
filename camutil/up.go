@@ -82,6 +82,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	needDebugEnv := false
 	if skipHaveCache {
 		u.args = append([]string{"-havecache=false"}, u.args...)
+		u.args = append(u.args, "-statcache=false")
 		needDebugEnv = true
 	}
 	if capCtime {
