@@ -36,11 +36,12 @@ import (
 
 // Uploader holds the server and args
 type Uploader struct {
-	server string
-	args   []string
-	env    []string
-	gate   *syncutil.Gate
-	mtx    sync.Mutex
+	server        string
+	args          []string
+	env           []string
+	skipHaveCache bool
+	gate          *syncutil.Gate
+	mtx           sync.Mutex
 }
 
 // FileIsEmpty is the error for zero length files
@@ -66,14 +67,15 @@ func Close() error {
 }
 
 // NewUploader returns a new uploader for uploading files to the given server
-func NewUploader(server string, capCtime bool) *Uploader {
+func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	cachedUploaderMtx.Lock()
 	defer cachedUploaderMtx.Unlock()
 	u, ok := cachedUploader[server]
 	if ok {
 		return u
 	}
-	u = &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8)}
+	u = &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8),
+		skipHaveCache: skipHaveCache}
 	if server != "" {
 		u.args = []string{"-server=" + server, "file"}
 	}
@@ -82,6 +84,9 @@ func NewUploader(server string, capCtime bool) *Uploader {
 		if os.Getenv("CAMLI_DEBUG") != "true" { // -capctime needs CAMLI_DEBUG=true
 			u.env = append(os.Environ(), "CAMLI_DEBUG=true")
 		}
+	}
+	if skipHaveCache {
+		u.args = append(u.args, "-havecache=false")
 	}
 	cachedUploader[server] = u
 	return u
@@ -132,12 +137,16 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 		c.Env = u.env
 		errbuf := bytes.NewBuffer(nil)
 		c.Stderr = errbuf
-		// serialize camput calls (have cache)
-		func() {
-			u.mtx.Lock()
-			defer u.mtx.Unlock()
+		if u.skipHaveCache {
 			out, err = c.Output()
-		}()
+		} else {
+			// serialize camput calls (have cache)
+			func() {
+				u.mtx.Lock()
+				defer u.mtx.Unlock()
+				out, err = c.Output()
+			}()
+		}
 		if err != nil {
 			err = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
 			return

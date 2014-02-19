@@ -41,10 +41,11 @@ var (
 	flagVerbose     = flag.Bool("v", false, "verbose logging")
 	flagInsecureTLS = flag.Bool("k", false, "allow insecure TLS")
 	//flagServer      = flag.String("server", ":3179", "Camlistore server address")
-	flagCapCtime = flag.Bool("capctime", false, "forge ctime to be less or equal to mtime")
-	flagNoAuth   = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
-	flagListen   = flag.String("listen", ":3178", "listen on")
-	flagParanoid = flag.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
+	flagCapCtime      = flag.Bool("capctime", false, "forge ctime to be less or equal to mtime")
+	flagNoAuth        = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
+	flagListen        = flag.String("listen", ":3178", "listen on")
+	flagParanoid      = flag.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
+	flagSkipHaveCache = flag.Bool("skiphavecache", false, "Skip have cache? (more stress on camlistored)")
 
 	server string
 )
@@ -170,7 +171,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			}
 		*/
 	case "POST":
-		u, err := getUploader(*flagCapCtime)
+		u, err := getUploader()
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error getting uploader to %q: %s", server, err), 500)
 			return
@@ -446,8 +447,8 @@ func (w *respWriter) Close() (err error) {
 	return
 }
 
-func getUploader(capCtime bool) (*camutil.Uploader, error) {
-	return camutil.NewUploader(server, capCtime), nil
+func getUploader() (*camutil.Uploader, error) {
+	return camutil.NewUploader(server, *flagCapCtime, *flagSkipHaveCache), nil
 }
 
 func getDownloader() (*camutil.Downloader, error) {
