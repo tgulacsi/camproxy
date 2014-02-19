@@ -77,15 +77,15 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	u = &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8),
 		skipHaveCache: skipHaveCache}
 	if server != "" {
-		u.args = []string{"-server=" + server, "file"}
+		u.args = append([]string{"-server=" + server}, u.args...)
 	}
 	needDebugEnv := false
-	if capCtime {
-		u.args = append(u.args, "-capctime")
+	if skipHaveCache {
+		u.args = append([]string{"-havecache=false"}, u.args...)
 		needDebugEnv = true
 	}
-	if skipHaveCache {
-		u.args = append(u.args, "-havecache=false")
+	if capCtime {
+		u.args = append(u.args, "-capctime")
 		needDebugEnv = true
 	}
 	if needDebugEnv {
