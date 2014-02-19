@@ -79,14 +79,19 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	if server != "" {
 		u.args = []string{"-server=" + server, "file"}
 	}
+	needDebugEnv := false
 	if capCtime {
 		u.args = append(u.args, "-capctime")
-		if os.Getenv("CAMLI_DEBUG") != "true" { // -capctime needs CAMLI_DEBUG=true
-			u.env = append(os.Environ(), "CAMLI_DEBUG=true")
-		}
+		needDebugEnv = true
 	}
 	if skipHaveCache {
 		u.args = append(u.args, "-havecache=false")
+		needDebugEnv = true
+	}
+	if needDebugEnv {
+		if os.Getenv("CAMLI_DEBUG") != "true" { // -capctime needs CAMLI_DEBUG=true
+			u.env = append(os.Environ(), "CAMLI_DEBUG=true")
+		}
 	}
 	cachedUploader[server] = u
 	return u
