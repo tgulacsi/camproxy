@@ -328,8 +328,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 		return nil
 	case "file":
-		seekFetcher := blob.SeekerFromStreamingFetcher(src)
-		fr, err := schema.NewFileReader(seekFetcher, br)
+		fr, err := schema.NewFileReader(src, br)
 		if err != nil {
 			return fmt.Errorf("NewFileReader: %v", err)
 		}
