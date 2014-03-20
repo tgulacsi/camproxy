@@ -229,11 +229,11 @@ func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) e
 	return nil
 }
 
-func fetch(src blob.StreamingFetcher, br blob.Ref) (r io.ReadCloser, err error) {
+func fetch(src blob.Fetcher, br blob.Ref) (r io.ReadCloser, err error) {
 	if Verbose {
 		log.Printf("Fetching %s", br.String())
 	}
-	r, _, err = src.FetchStreaming(br)
+	r, _, err = src.Fetch(br)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to fetch %s: %s", br, err)
 	}
@@ -244,7 +244,7 @@ func fetch(src blob.StreamingFetcher, br blob.Ref) (r io.ReadCloser, err error) 
 const sniffSize = 900 * 1024
 
 // smartFetch the things that blobs point to, not just blobs.
-func smartFetch(src blob.StreamingFetcher, targ string, br blob.Ref) error {
+func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	rc, err := fetch(src, br)
 	if err != nil {
 		return err
