@@ -18,6 +18,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"io"
@@ -26,9 +28,11 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"camlistore.org/pkg/blob"
@@ -127,49 +131,6 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 
-		/*
-			dn, err := ioutil.TempDir("", "camli")
-			if err != nil {
-				http.Error(w, "error creating temp file for download: "+err.Error(), 500)
-				return
-			}
-			defer os.RemoveAll(dn)
-			if err = d.Save(dn, true, items...); err != nil {
-				http.Error(w, fmt.Sprintf("error downloading %q: %s", items, err), 500)
-				return
-			}
-			dh, err := os.Open(dn)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("cannot open temp dir %q: %s", dn, err), 500)
-				return
-			}
-			defer dh.Close()
-			files, err := dh.Readdirnames(-1)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("error listing temp dir %q: %s", dn, err), 500)
-				return
-			}
-			accept := r.Header.Get("Accept")
-			log.Printf("Accept=%q", accept)
-			switch len(files) {
-			case 0:
-				w.WriteHeader(404)
-				w.Write(nil)
-			case 1:
-				if accept == "application/tar" || accept == "application/zip" {
-					externalArchDir(&respWriter{w, accept, false}, dn, accept[12:])
-				} else {
-					http.ServeFile(w, r, filepath.Join(dn, files[0]))
-				}
-			default:
-				switch accept {
-				case "application/x-tar", "application/tar":
-					tarDir(&respWriter{w, "application/tar", false}, dn)
-				default:
-					zipDir(&respWriter{w, "application/zip", false}, dn)
-				}
-			}
-		*/
 	case "POST":
 		u, err := getUploader()
 		if err != nil {
@@ -302,7 +263,7 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimetype string, e
 		fh, err = ioutil.TempFile(destDir, "file-")
 	} else {
 		//log.Printf("fn=%q", fn)
-		fn = filepath.Join(destDir, filepath.Base(fn))
+		fn = filepath.Join(destDir, safeBaseFn(fn))
 		fh, err = os.Create(fn)
 	}
 	if err != nil {
@@ -328,8 +289,8 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 	var fn string
 	var lastmod time.Time
 	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
-		defer part.Close()
 		filename := part.FileName()
+		//log.Printf("part fn=%q name=%q", filename, part.FormName())
 		if filename == "" {
 			if part.FormName() == "mtime" {
 				b := bytes.NewBuffer(make([]byte, 23))
@@ -338,18 +299,27 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 					qmtime = b.String()
 				}
 			}
+			part.Close()
 			continue
 		}
-		fn = filepath.Join(destDir, filepath.Base(filename))
+		fn = filepath.Join(destDir, safeBaseFn(filename))
 		fh, err := os.Create(fn)
+		//log.Printf("os.Create(%q): %v", fn, err)
 		if err != nil {
+			part.Close()
 			return nil, nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
 		}
-		if _, err = io.Copy(fh, part); err == nil {
+		_, err = io.Copy(fh, part)
+		//log.Printf("io.Copy(%v, %v): %v", fh, part, err)
+		if err == nil {
 			filenames = append(filenames, fh.Name())
 			mimetypes = append(mimetypes, part.Header.Get("Content-Type"))
 		}
-		fh.Close()
+		part.Close()
+		closeErr := fh.Close()
+		if err == nil && closeErr != nil {
+			err = closeErr
+		}
 		if err != nil {
 			return nil, nil, fmt.Errorf("error writing to %q: %s", fn, err)
 		}
@@ -361,10 +331,43 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			}
 		}
 	}
-	if err == io.EOF {
-		err = nil
+	return filenames, mimetypes, nil
+}
+
+func safeBaseFn(filename string) string {
+	if i := strings.LastIndexAny(filename, "/\\"); i >= 0 {
+		filename = filename[i+1:]
 	}
-	return
+	n := len(filename)
+	for strings.IndexByte(filename, '%') >= 0 {
+		if fn, err := url.QueryUnescape(filename); err != nil {
+			log.Printf("QueryUnescape(%q): %v", filename, err)
+			break
+		} else {
+			filename = fn
+		}
+		if len(filename) >= n {
+			break
+		}
+		n = len(filename)
+	}
+	if i := strings.LastIndexAny(filename, "/\\"); i >= 0 {
+		filename = filename[i+1:]
+	}
+	if len(filename) > 255 {
+		old := filename
+		i := strings.LastIndex(filename, ".")
+		ext := ""
+		if i >= 0 {
+			ext = filename[i:]
+		}
+		hsh := sha1.New()
+		_, _ = io.WriteString(hsh, filename)
+		hshS := base64.URLEncoding.EncodeToString(hsh.Sum(nil))
+		filename = filename[:255-1-len(hshS)-len(ext)] + "-" + ext
+		log.Printf("filename too long: %q -> %q", old, filename)
+	}
+	return filename
 }
 
 func parseLastModified(lastModHeader, mtimeHeader string) time.Time {
