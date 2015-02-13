@@ -33,6 +33,7 @@ import (
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/client"
+	"camlistore.org/pkg/magic"
 
 	"github.com/tgulacsi/camproxy/camutil"
 )
@@ -99,77 +100,49 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "a blobref is needed!", 400)
 			return
 		}
-		d, err := getDownloader()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("error getting downloader to %q: %s",
-				server, err), 500)
-			return
-		}
 		content := r.URL.Query().Get("raw") != "1"
 		okMime, nm := "", ""
 		if !content {
 			okMime = "application/json"
 		} else {
 			okMime = r.URL.Query().Get("mimeType")
-			if 1 == len(items) {
+			if okMime == "" && 1 == len(items) {
 				nm = camutil.RefToBase64(items[0])
-				if okMime == "" {
-					okMime = mimeCache.Get(nm)
-				}
+				okMime = mimeCache.Get(nm)
 			}
 		}
-		// TODO(gt): retrieve proper mime-type
+		d, err := getDownloader()
+		if err != nil {
+			http.Error(w,
+				fmt.Sprintf("error getting downloader to %q: %s", server, err),
+				500)
+			return
+		}
+		rc, err := d.Start(content, items...)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("download error: %v", err), 500)
+			return
+		}
+		defer rc.Close()
+
+		if okMime == "" {
+			// must sniff
+			var rr io.Reader
+			okMime, rr = magic.MIMETypeFromReader(rc)
+			rc = struct {
+				io.Reader
+				io.Closer
+			}{rr, rc}
+		}
+
 		rw := newRespWriter(w, nm, okMime)
 		defer rw.Close()
-		if err = d.Download(rw, content, items...); err != nil {
+		if _, err = io.Copy(rw, rc); err != nil {
 			http.Error(w, fmt.Sprintf("error downloading %q: %s", items, err), 500)
 			return
 		}
 		return
 
-		/*
-			dn, err := ioutil.TempDir("", "camli")
-			if err != nil {
-				http.Error(w, "error creating temp file for download: "+err.Error(), 500)
-				return
-			}
-			defer os.RemoveAll(dn)
-			if err = d.Save(dn, true, items...); err != nil {
-				http.Error(w, fmt.Sprintf("error downloading %q: %s", items, err), 500)
-				return
-			}
-			dh, err := os.Open(dn)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("cannot open temp dir %q: %s", dn, err), 500)
-				return
-			}
-			defer dh.Close()
-			files, err := dh.Readdirnames(-1)
-			if err != nil {
-				http.Error(w, fmt.Sprintf("error listing temp dir %q: %s", dn, err), 500)
-				return
-			}
-			accept := r.Header.Get("Accept")
-			log.Printf("Accept=%q", accept)
-			switch len(files) {
-			case 0:
-				w.WriteHeader(404)
-				w.Write(nil)
-			case 1:
-				if accept == "application/tar" || accept == "application/zip" {
-					externalArchDir(&respWriter{w, accept, false}, dn, accept[12:])
-				} else {
-					http.ServeFile(w, r, filepath.Join(dn, files[0]))
-				}
-			default:
-				switch accept {
-				case "application/x-tar", "application/tar":
-					tarDir(&respWriter{w, "application/tar", false}, dn)
-				default:
-					zipDir(&respWriter{w, "application/zip", false}, dn)
-				}
-			}
-		*/
 	case "POST":
 		u, err := getUploader()
 		if err != nil {

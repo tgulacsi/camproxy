@@ -44,8 +44,10 @@ type Downloader struct {
 	args []string
 }
 
-var cachedClient = make(map[string]*client.Client, 1)
-var cachedClientMtx = new(sync.Mutex)
+var (
+	cachedClient    = make(map[string]*client.Client, 1)
+	cachedClientMtx sync.Mutex
+)
 
 // NewClient returns a new client for the given server. Auth is set up according
 // to the client config (~/.config/camlistore/client-config.json)
@@ -68,8 +70,10 @@ func NewClient(server string) (*client.Client, error) {
 	return c, nil
 }
 
-var cachedDownloader = make(map[string]*Downloader, 1)
-var cachedDownloaderMtx = new(sync.Mutex)
+var (
+	cachedDownloader    = make(map[string]*Downloader, 1)
+	cachedDownloaderMtx sync.Mutex
+)
 
 // The followings are copied from camlistore.org/cmd/camget
 
@@ -176,11 +180,15 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	return br, nil
 }
 
-// Download downloads the blobrefs and writes it to dest
+// Start starts the downloads of the blobrefs.
 // Just the JSON schema if contents is false, else the content of the blob.
-func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Ref) error {
-	var rc io.ReadCloser
-	var err error
+func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, error) {
+	readers := make([]io.Reader, 0, len(items))
+	closers := make([]io.Closer, 0, len(items))
+	var (
+		rc  io.ReadCloser
+		err error
+	)
 	for _, br := range items {
 		if contents {
 			rc, err = schema.NewFileReader(down.dc, br)
@@ -190,33 +198,40 @@ func (down *Downloader) Download(dest io.Writer, contents bool, items ...blob.Re
 		} else {
 			rc, err = fetch(down.dc, br)
 		}
-		if err != nil {
-			log.Printf("error downloading %q: %s", br, err)
-			args := append(make([]string, 0, len(down.args)+3), down.args...)
-			if contents {
-				args = append(args, "-contents=true")
-			}
-			if InsecureTLS {
-				args = append(args, "-insecure=true")
-			}
-			args = append(args, br.String())
-			c := exec.Command("camget", args...)
-			c.Stdout = dest
-			errbuf := bytes.NewBuffer(nil)
-			c.Stderr = errbuf
-			log.Printf("calling camget %q", args)
-			err = c.Run()
-			if err != nil {
-				err = fmt.Errorf("error calling camget %q: %s (%s)", args, errbuf.Bytes(), err)
-			}
-			return err
+		if err == nil {
+			readers = append(readers, rc)
+			closers = append(closers, rc)
+			continue
 		}
-		defer rc.Close()
-		if _, err := io.Copy(dest, rc); err != nil {
-			return fmt.Errorf("Failed reading %q: %v", br, err)
+		log.Printf("error downloading %q: %s", br, err)
+		args := append(make([]string, 0, len(down.args)+3), down.args...)
+		if contents {
+			args = append(args, "-contents=true")
 		}
+		if InsecureTLS {
+			args = append(args, "-insecure=true")
+		}
+		args = append(args, br.String())
+		c := exec.Command("camget", args...)
+		errbuf := bytes.NewBuffer(nil)
+		c.Stderr = errbuf
+		if rc, err = c.StdoutPipe(); err != nil {
+			return nil, fmt.Errorf("error createing stdout pipe for camget %q: %s (%v)", args, errbuf.String(), err)
+		}
+		log.Printf("calling camget %q", args)
+		if err = c.Run(); err != nil {
+			return nil, fmt.Errorf("error calling camget %q: %s (%v)", args, errbuf.String(), err)
+		}
+		readers = append(readers, rc)
+		closers = append(closers, rc)
 	}
-	return nil
+
+	return struct {
+		io.Reader
+		io.Closer
+	}{io.MultiReader(readers...),
+		multiCloser{closers},
+	}, nil
 }
 
 // Save saves contents of the blobs into destDir as files
@@ -380,4 +395,20 @@ func setFileMeta(name string, blob *schema.Blob) error {
 		}
 	}
 	return nil
+}
+
+var _ = io.Closer(multiCloser{})
+
+type multiCloser struct {
+	closers []io.Closer
+}
+
+func (mc multiCloser) Close() error {
+	var err error
+	for _, c := range mc.closers {
+		if closeErr := c.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
