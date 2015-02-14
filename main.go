@@ -32,7 +32,6 @@ import (
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/client"
-	"camlistore.org/pkg/magic"
 
 	"github.com/tgulacsi/camproxy/camutil"
 
@@ -147,7 +146,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		if okMime == "" {
 			// must sniff
 			var rr io.Reader
-			okMime, rr = magic.MIMETypeFromReader(rc)
+			okMime, rr = camutil.MIMETypeFromReader(rc)
 			rc = struct {
 				io.Reader
 				io.Closer
