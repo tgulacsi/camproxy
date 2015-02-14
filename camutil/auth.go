@@ -20,7 +20,6 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"io"
-	"log"
 	"net/http"
 	"strings"
 
@@ -36,13 +35,14 @@ func SetupBasicAuthChecker(handler http.HandlerFunc, camliAuth string) http.Hand
 	}
 	parts := strings.Split(camliAuth, ":")
 	if len(parts) < 3 || parts[0] != "userpass" {
-		log.Printf("unrecognizable camliAuth %q", camliAuth)
+		Log.Error("unrecognizable camliAuth " + camliAuth)
 		return handler
 	}
 	username := parts[1]
 	hsh := sha1.New()
 	if _, err := io.WriteString(hsh, parts[2]); err != nil {
-		log.Fatalf("error hashing user:passw: %s", err)
+		Log.Crit("error hashing user:passw", "error", err)
+		return nil
 	}
 	passwd := "{SHA}" + base64.StdEncoding.EncodeToString(hsh.Sum(nil))
 	authenticator := auth.NewBasicAuthenticator("camproxy",

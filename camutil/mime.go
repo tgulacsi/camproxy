@@ -17,16 +17,36 @@ limitations under the License.
 package camutil
 
 import (
-	"log"
+	"bytes"
+	"io"
 
-	"bitbucket.org/taruti/mimemagic"
 	"camlistore.org/pkg/lru"
+	"camlistore.org/pkg/magic"
 	"camlistore.org/pkg/sorted"
 	"camlistore.org/pkg/sorted/kvfile"
+
+	"bitbucket.org/taruti/mimemagic"
 )
 
 // DefaultMaxMemMimeCacheSize is the maximum size of in-memory mime cache
 var DefaultMaxMemMimeCacheSize = 1024
+
+// MIMETypeFromReader takes a reader, sniffs the beginning of it,
+// and returns the mime (if sniffed, else "") and a new reader
+// that's the concatenation of the bytes sniffed and the remaining
+// reader.
+func MIMETypeFromReader(r io.Reader) (mime string, reader io.Reader) {
+	var buf bytes.Buffer
+	_, err := io.Copy(&buf, io.LimitReader(r, 1024))
+	mime = magic.MIMEType(buf.Bytes())
+	if mime == "" || mime == "application/octet-stream" {
+		mime = mimemagic.Match(mime, buf.Bytes())
+	}
+	if err != nil {
+		return mime, io.MultiReader(&buf, errReader{err})
+	}
+	return mime, io.MultiReader(&buf, r)
+}
 
 // MimeCache is the in-memory (LRU) and disk-based (kv) cache of mime types
 type MimeCache struct {
@@ -44,7 +64,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 
 	var err error
 	if mc.db, err = kvfile.NewStorage(filename); err != nil {
-		log.Printf("cannot open/create db %q: %s", filename, err)
+		Log.Error("cannot open/create db", "file", filename, "error", err)
 		mc.db = nil
 	}
 	return mc
@@ -79,7 +99,7 @@ func (mc *MimeCache) Set(key, mime string) {
 	mc.mem.Add(key, mime)
 	if mc.db != nil {
 		if err := mc.db.Set(key, mime); err != nil {
-			log.Printf("error setting %q to %q in %s: %s", key, mime, mc.db, err)
+			Log.Error("error setting", "key", key, "mime", mime, "db", mc.db, "error", err)
 		}
 	}
 }
@@ -87,4 +107,12 @@ func (mc *MimeCache) Set(key, mime string) {
 // MatchMime checks mime from the first 1024 bytes
 func MatchMime(guessMime string, data []byte) string {
 	return mimemagic.Match(guessMime, data)
+}
+
+type errReader struct {
+	err error
+}
+
+func (er errReader) Read(_ []byte) (int, error) {
+	return 0, er.err
 }
