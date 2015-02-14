@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -137,7 +136,7 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 		if i > 0 {
 			time.Sleep(time.Duration(i) * time.Second)
 		}
-		log.Printf("camput %s", args)
+		Log.Info("camput", "args", args)
 		c := exec.Command("camput", args...)
 		c.Dir = dir
 		c.Env = u.env
@@ -175,7 +174,7 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 				break
 			}
 			if down, err = NewDownloader(u.server); err != nil {
-				log.Printf("cannot get downloader for checking uploads: %s", err)
+				Log.Error("cannot get downloader for checking uploads", "error", err)
 				err = nil
 				return
 			}
@@ -183,14 +182,14 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 		if rc, err = fetch(down.dc, content); err == nil {
 			blb, err = schema.BlobFromReader(content, rc)
 			rc.Close()
-			if err == nil {
+			if err != nil {
+				Log.Error("error getting back blob", "blob", content, "error", err)
+			} else {
 				if len(blb.ByteParts()) > 0 {
 					return
 				}
 				err = fmt.Errorf("blob[%s].parts is empty!", content)
-				log.Println(err.Error() + "(" + blb.JSON() + ")")
-			} else {
-				log.Printf("error getting back blob %q: %s", content, err)
+				Log.Error(err.Error(), "blob", blb.JSON())
 			}
 		}
 	}
@@ -201,7 +200,7 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 func RefToBase64(br blob.Ref) string {
 	data, err := br.MarshalBinary()
 	if err != nil {
-		log.Printf("error marshaling %v: %s", br, err)
+		Log.Error("error marshaling", "blob", br, "error", err)
 		return ""
 	}
 	hn := br.HashName()

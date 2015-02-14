@@ -24,3 +24,6 @@ var Verbose = false
 
 // InsecureTLS sets client's InsecureTLS
 var InsecureTLS bool
+
+// SkipIrregular makes camget skip not regular files.
+var SkipIrregular bool

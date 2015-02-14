@@ -20,22 +20,26 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/cacher"
 	"camlistore.org/pkg/client"
-	"camlistore.org/pkg/index"
 	"camlistore.org/pkg/schema"
+
+	"gopkg.in/inconshreveable/log15.v2"
 )
+
+// Log is discarded by default. Use Log.SetHandler to set destionation.
+var Log = log15.New("lib", "camutil")
+
+func init() {
+	Log.SetHandler(log15.DiscardHandler())
+}
 
 // Downloader is the struct for downloading file/dir blobs
 type Downloader struct {
@@ -104,7 +108,7 @@ func NewDownloader(server string) (*Downloader, error) {
 		return nil, fmt.Errorf("Error setting up local disk cache: %v", err)
 	}
 	if Verbose {
-		log.Printf("Using temp blob cache directory %s", down.dc.Root)
+		Log.Info("Using temp blob cache directory " + down.dc.Root)
 	}
 	if server != "" {
 		down.args = []string{"-server=" + server}
@@ -167,9 +171,6 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	if n > 0 {
 		t = append(t, make([]byte, n)...)
 	}
-	//log.Printf("t=%q b=%q i=%d n=%d cap(t)=%d", t, b, i, n, cap(t))
-	//log.Printf("b=[%d]%q", len(b), b)
-	//log.Printf("t[i+1:]=[%d]%q", len(t), t[i+1:])
 	n = hex.Encode(t[i+1:], b)
 	arg = string(t[:i+1+n])
 	br, ok := blob.Parse(arg)
@@ -203,7 +204,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 			closers = append(closers, rc)
 			continue
 		}
-		log.Printf("error downloading %q: %s", br, err)
+		Log.Error("downloading", "blog", br, "error", err)
 		args := append(make([]string, 0, len(down.args)+3), down.args...)
 		if contents {
 			args = append(args, "-contents=true")
@@ -218,7 +219,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 		if rc, err = c.StdoutPipe(); err != nil {
 			return nil, fmt.Errorf("error createing stdout pipe for camget %q: %s (%v)", args, errbuf.String(), err)
 		}
-		log.Printf("calling camget %q", args)
+		Log.Info("calling camget", "args", args)
 		if err = c.Run(); err != nil {
 			return nil, fmt.Errorf("error calling camget %q: %s (%v)", args, errbuf.String(), err)
 		}
@@ -238,7 +239,8 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
 	for _, br := range items {
 		if err := smartFetch(down.dc, destDir, br); err != nil {
-			log.Fatal(err)
+			Log.Crit("Save", "error", err)
+			return err
 		}
 	}
 	return nil
@@ -246,155 +248,13 @@ func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) e
 
 func fetch(src blob.Fetcher, br blob.Ref) (r io.ReadCloser, err error) {
 	if Verbose {
-		log.Printf("Fetching %s", br.String())
+		Log.Debug("Fetch", "blob", br)
 	}
 	r, _, err = src.Fetch(br)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to fetch %s: %s", br, err)
 	}
 	return r, err
-}
-
-// A little less than the sniffer will take, so we don't truncate.
-const sniffSize = 900 * 1024
-
-// smartFetch the things that blobs point to, not just blobs.
-func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
-	rc, err := fetch(src, br)
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-
-	sniffer := index.NewBlobSniffer(br)
-	_, err = io.CopyN(sniffer, rc, sniffSize)
-	if err != nil && err != io.EOF {
-		return err
-	}
-
-	sniffer.Parse()
-	b, ok := sniffer.SchemaBlob()
-
-	if !ok {
-		if Verbose {
-			log.Printf("Fetching opaque data %v into %q", br, targ)
-		}
-
-		// opaque data - put it in a file
-		f, err := os.Create(targ)
-		if err != nil {
-			return fmt.Errorf("opaque: %v", err)
-		}
-		defer f.Close()
-		body, _ := sniffer.Body()
-		r := io.MultiReader(bytes.NewReader(body), rc)
-		_, err = io.Copy(f, r)
-		return err
-	}
-
-	switch b.Type() {
-	case "directory":
-		dir := filepath.Join(targ, b.FileName())
-		if Verbose {
-			log.Printf("Fetching directory %v into %s", br, dir)
-		}
-		if err := os.MkdirAll(dir, b.FileMode()); err != nil {
-			return err
-		}
-		if err := setFileMeta(dir, b); err != nil {
-			log.Print(err)
-		}
-		entries, ok := b.DirectoryEntries()
-		if !ok {
-			return fmt.Errorf("bad entries blobref in dir %v", b.BlobRef())
-		}
-		return smartFetch(src, dir, entries)
-	case "static-set":
-		if Verbose {
-			log.Printf("Fetching directory entries %v into %s", br, targ)
-		}
-
-		// directory entries
-		const numWorkers = 10
-		type work struct {
-			br   blob.Ref
-			errc chan<- error
-		}
-		members := b.StaticSetMembers()
-		workc := make(chan work, len(members))
-		defer close(workc)
-		for i := 0; i < numWorkers; i++ {
-			go func() {
-				for wi := range workc {
-					wi.errc <- smartFetch(src, targ, wi.br)
-				}
-			}()
-		}
-		var errcs []<-chan error
-		for _, mref := range members {
-			errc := make(chan error, 1)
-			errcs = append(errcs, errc)
-			workc <- work{mref, errc}
-		}
-		for _, errc := range errcs {
-			if err := <-errc; err != nil {
-				return err
-			}
-		}
-		return nil
-	case "file":
-		fr, err := schema.NewFileReader(src, br)
-		if err != nil {
-			return fmt.Errorf("NewFileReader: %v", err)
-		}
-		fr.LoadAllChunks()
-		defer fr.Close()
-
-		name := filepath.Join(targ, b.FileName())
-
-		if fi, err := os.Stat(name); err == nil && fi.Size() == fi.Size() {
-			if Verbose {
-				log.Printf("Skipping %s; already exists.", name)
-				return nil
-			}
-		}
-
-		if Verbose {
-			log.Printf("Writing %s to %s ...", br, name)
-		}
-
-		f, err := os.Create(name)
-		if err != nil {
-			return fmt.Errorf("file type: %v", err)
-		}
-		defer f.Close()
-		if _, err := io.Copy(f, fr); err != nil {
-			return fmt.Errorf("Copying %s to %s: %v", br, name, err)
-		}
-		if err := setFileMeta(name, b); err != nil {
-			log.Print(err)
-		}
-		return nil
-	default:
-		return errors.New("unknown blob type: " + b.Type())
-	}
-}
-
-func setFileMeta(name string, blob *schema.Blob) error {
-	err1 := os.Chmod(name, blob.FileMode())
-	var err2 error
-	if mt := blob.ModTime(); !mt.IsZero() {
-		err2 = os.Chtimes(name, mt, mt)
-	}
-	// TODO: we previously did os.Chown here, but it's rarely wanted,
-	// then the schema.Blob refactor broke it, so it's gone.
-	// Add it back later once we care?
-	for _, err := range []error{err1, err2} {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 var _ = io.Closer(multiCloser{})

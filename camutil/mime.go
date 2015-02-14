@@ -17,8 +17,6 @@ limitations under the License.
 package camutil
 
 import (
-	"log"
-
 	"bitbucket.org/taruti/mimemagic"
 	"camlistore.org/pkg/lru"
 	"camlistore.org/pkg/sorted"
@@ -44,7 +42,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 
 	var err error
 	if mc.db, err = kvfile.NewStorage(filename); err != nil {
-		log.Printf("cannot open/create db %q: %s", filename, err)
+		Log.Error("cannot open/create db", "file", filename, "error", err)
 		mc.db = nil
 	}
 	return mc
@@ -79,7 +77,7 @@ func (mc *MimeCache) Set(key, mime string) {
 	mc.mem.Add(key, mime)
 	if mc.db != nil {
 		if err := mc.db.Set(key, mime); err != nil {
-			log.Printf("error setting %q to %q in %s: %s", key, mime, mc.db, err)
+			Log.Error("error setting", "key", key, "mime", mime, "db", mc.db, "error", err)
 		}
 	}
 }
