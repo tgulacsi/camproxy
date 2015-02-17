@@ -124,6 +124,7 @@ func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
 func (u *Uploader) FromReaderInfo(fi os.FileInfo, mime string, r io.Reader) (blob.Ref, error) {
 	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
 	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
+	file = file.SetType("file")
 	return schema.WriteFileMap(u.StatReceiver, file, r)
 }
 

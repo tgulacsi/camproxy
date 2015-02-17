@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -210,11 +211,27 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 	for _, br := range items {
 		if contents {
 			rc, err = schema.NewFileReader(down.Fetcher, br)
+			Log.Debug("NewFileReader", "blob", br, "error", err)
 			if err == nil {
 				rc.(*schema.FileReader).LoadAllChunks()
 			}
 		} else {
-			rc, err = fetch(down.Fetcher, br)
+			var b *blob.Blob
+			b, err = blob.FromFetcher(down.Fetcher, br)
+			if err == nil {
+				rc = b.Open()
+				Log.Debug("blob", "ref", br.String(),
+					"blob", log15.Lazy{func() string {
+						var buf bytes.Buffer
+						_, err = io.Copy(&buf, rc)
+						rc.Close()
+						rc = struct {
+							io.Reader
+							io.Closer
+						}{bytes.NewReader(buf.Bytes()), ioutil.NopCloser(nil)}
+						return buf.String()
+					}})
+			}
 		}
 		if err == nil {
 			readers = append(readers, rc)
