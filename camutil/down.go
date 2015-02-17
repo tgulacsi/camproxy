@@ -24,9 +24,11 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
+	"strings"
 	"sync"
 
 	"camlistore.org/pkg/blob"
+	"camlistore.org/pkg/blobserver/localdisk"
 	"camlistore.org/pkg/cacher"
 	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
@@ -43,8 +45,8 @@ func init() {
 
 // Downloader is the struct for downloading file/dir blobs
 type Downloader struct {
-	cl   *client.Client
-	dc   *cacher.DiskCache
+	cl *client.Client
+	blob.Fetcher
 	args []string
 }
 
@@ -66,9 +68,17 @@ func NewClient(server string) (*client.Client, error) {
 	if ok {
 		return c, nil
 	}
-	c = client.New(server)
-	if err := c.SetupAuth(); err != nil {
-		return nil, err
+	if strings.HasPrefix(server, "file://") {
+		bs, err := localdisk.New(server[7:])
+		if err != nil {
+			return nil, err
+		}
+		c = client.NewStorageClient(bs)
+	} else {
+		c = client.New(server)
+		if err := c.SetupAuth(); err != nil {
+			return nil, err
+		}
 	}
 	cachedClient[server] = c
 	return c, nil
@@ -97,18 +107,23 @@ func NewDownloader(server string) (*Downloader, error) {
 		return nil, err
 	}
 
+	if strings.HasPrefix(server, "file://") {
+		down.Fetcher = down.cl
+		cachedDownloader[server] = down
+		return down, nil
+	}
 	down.cl.InsecureTLS = InsecureTLS
 	tr := down.cl.TransportForConfig(&client.TransportConfig{
 		Verbose: Verbose,
 	})
 	down.cl.SetHTTPClient(&http.Client{Transport: tr})
 
-	down.dc, err = cacher.NewDiskCache(down.cl)
+	down.Fetcher, err = cacher.NewDiskCache(down.cl)
 	if err != nil {
 		return nil, fmt.Errorf("Error setting up local disk cache: %v", err)
 	}
 	if Verbose {
-		Log.Info("Using temp blob cache directory " + down.dc.Root)
+		Log.Info("Using temp blob cache directory " + down.Fetcher.(*cacher.DiskCache).Root)
 	}
 	if server != "" {
 		down.args = []string{"-server=" + server}
@@ -122,8 +137,10 @@ func NewDownloader(server string) (*Downloader, error) {
 
 // Close closes the downloader (the underlying client)
 func (down *Downloader) Close() {
-	if down != nil && down.dc != nil {
-		down.dc.Clean()
+	if down != nil && down.Fetcher != nil {
+		if dc, ok := down.Fetcher.(*cacher.DiskCache); ok {
+			dc.Clean()
+		}
 	}
 }
 
@@ -192,12 +209,12 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 	)
 	for _, br := range items {
 		if contents {
-			rc, err = schema.NewFileReader(down.dc, br)
+			rc, err = schema.NewFileReader(down.Fetcher, br)
 			if err == nil {
 				rc.(*schema.FileReader).LoadAllChunks()
 			}
 		} else {
-			rc, err = fetch(down.dc, br)
+			rc, err = fetch(down.Fetcher, br)
 		}
 		if err == nil {
 			readers = append(readers, rc)
@@ -238,7 +255,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 // Save saves contents of the blobs into destDir as files
 func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
 	for _, br := range items {
-		if err := smartFetch(down.dc, destDir, br); err != nil {
+		if err := smartFetch(down.Fetcher, destDir, br); err != nil {
 			Log.Crit("Save", "error", err)
 			return err
 		}

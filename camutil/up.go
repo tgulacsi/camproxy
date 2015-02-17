@@ -25,10 +25,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"camlistore.org/pkg/blob"
+	"camlistore.org/pkg/blobserver"
+	"camlistore.org/pkg/blobserver/localdisk"
+	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
 	"camlistore.org/pkg/syncutil"
 )
@@ -41,6 +45,7 @@ type Uploader struct {
 	skipHaveCache bool
 	gate          *syncutil.Gate
 	mtx           sync.Mutex
+	blobserver.StatReceiver
 }
 
 // FileIsEmpty is the error for zero length files
@@ -73,8 +78,19 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	if ok {
 		return u
 	}
+	if strings.HasPrefix(server, "file://") {
+		recv, err := localdisk.New(server[7:])
+		if err != nil {
+			Log.Error("localdisk.New", "server", server, "error", err)
+			return nil
+		}
+		u = &Uploader{server: server, gate: syncutil.NewGate(8), skipHaveCache: true,
+			StatReceiver: recv}
+		cachedUploader[server] = u
+		return u
+	}
 	u = &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8),
-		skipHaveCache: skipHaveCache}
+		skipHaveCache: skipHaveCache, StatReceiver: client.New(server)}
 	if server != "" {
 		u.args = append([]string{"-server=" + server}, u.args...)
 	}
@@ -97,6 +113,20 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	return u
 }
 
+// FromReader uploads the contents of the io.Reader.
+func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
+	return schema.WriteFileFromReader(u.StatReceiver, filepath.Base(fileName), r)
+}
+
+// FromReaderInfo uploads the contents of r, wrapped with data from fi.
+// Creation time (unixCtime) is capped at modification time (unixMtime), and
+// a "mimeType" field is set, if mime is not empty.
+func (u *Uploader) FromReaderInfo(fi os.FileInfo, mime string, r io.Reader) (blob.Ref, error) {
+	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
+	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
+	return schema.WriteFileMap(u.StatReceiver, file, r)
+}
+
 // UploadFile uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
 func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.Ref, err error) {
@@ -104,8 +134,8 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 	if err != nil {
 		return
 	}
+	defer fh.Close()
 	fi, err := fh.Stat()
-	fh.Close()
 	if err != nil {
 		return
 	}
@@ -116,6 +146,12 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 	}
 	u.gate.Start()
 	defer u.gate.Done()
+
+	if u.StatReceiver != nil && !permanode {
+		br, err := u.FromReader(fh.Name(), fh)
+		return br, blob.Ref{}, err
+	}
+
 	i := len(u.args) + 2
 	if permanode {
 		i++
@@ -179,7 +215,7 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 				return
 			}
 		}
-		if rc, err = fetch(down.dc, content); err == nil {
+		if rc, err = fetch(down.Fetcher, content); err == nil {
 			blb, err = schema.BlobFromReader(content, rc)
 			rc.Close()
 			if err != nil {
