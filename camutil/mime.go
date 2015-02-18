@@ -36,6 +36,9 @@ var DefaultMaxMemMimeCacheSize = 1024
 // that's the concatenation of the bytes sniffed and the remaining
 // reader.
 func MIMETypeFromReader(r io.Reader) (mime string, reader io.Reader) {
+	if r == nil {
+		return "", nil
+	}
 	var buf bytes.Buffer
 	_, err := io.Copy(&buf, io.LimitReader(r, 1024))
 	mime = magic.MIMEType(buf.Bytes())
