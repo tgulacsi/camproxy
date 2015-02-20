@@ -115,6 +115,9 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 
 // FromReader uploads the contents of the io.Reader.
 func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
+	Log.Debug("FromReader", "file", fileName)
+	u.gate.Start()
+	defer u.gate.Done()
 	return schema.WriteFileFromReader(u.StatReceiver, filepath.Base(fileName), r)
 }
 
@@ -122,15 +125,57 @@ func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
 // Creation time (unixCtime) is capped at modification time (unixMtime), and
 // a "mimeType" field is set, if mime is not empty.
 func (u *Uploader) FromReaderInfo(fi os.FileInfo, mime string, r io.Reader) (blob.Ref, error) {
+	Log.Debug("FromReaderInfo", "mime", mime)
 	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
 	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
 	file = file.SetType("file")
+	u.gate.Start()
+	defer u.gate.Done()
 	return schema.WriteFileMap(u.StatReceiver, file, r)
 }
 
 // UploadFile uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
-func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.Ref, err error) {
+func (u *Uploader) UploadFile(path, mimeType string, permanode bool) (content, perma blob.Ref, err error) {
+	direct := u.StatReceiver != nil && !permanode
+	if direct {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return content, perma, err
+		}
+		direct = fi.Mode().IsRegular()
+	}
+	if direct {
+		content, err = u.UploadFileMIME(path, mimeType)
+		return content, perma, err
+	}
+	return u.UploadFileExt(path, permanode)
+}
+
+// UploadFileMIME uploads a regular file with the given MIME type.
+func (u *Uploader) UploadFileMIME(fileName, mimeType string) (content blob.Ref, err error) {
+	fh, err := os.Open(fileName)
+	if err != nil {
+		return content, err
+	}
+	defer fh.Close()
+	fi, err := fh.Stat()
+	if err != nil {
+		return content, err
+	}
+	rdr := io.Reader(fh)
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType, rdr = MIMETypeFromReader(fh)
+	}
+	Log.Debug("direct upload with FromReader onto", "statreceiver", u.StatReceiver)
+	br, err := u.FromReaderInfo(fi, mimeType, rdr)
+	return br, err
+}
+
+// UploadFileExt uploads the given path (file or directory, recursively), and
+// returns the content ref, the permanode ref (if you asked for it), and error
+func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma blob.Ref, err error) {
+	Log.Info("UploadFile", "path", path, "permanode", permanode)
 	fh, err := os.Open(path)
 	if err != nil {
 		return
@@ -145,14 +190,6 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 		err = FileIsEmpty
 		return
 	}
-	u.gate.Start()
-	defer u.gate.Done()
-
-	if u.StatReceiver != nil && !permanode {
-		br, err := u.FromReader(fh.Name(), fh)
-		return br, blob.Ref{}, err
-	}
-
 	i := len(u.args) + 2
 	if permanode {
 		i++
@@ -169,6 +206,10 @@ func (u *Uploader) UploadFile(path string, permanode bool) (content, perma blob.
 	)
 	dir, base := filepath.Split(path)
 	args = append(args, base)
+
+	u.gate.Start()
+	defer u.gate.Done()
+
 	for i := 0; i < 10; i++ {
 		if i > 0 {
 			time.Sleep(time.Duration(i) * time.Second)

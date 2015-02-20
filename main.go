@@ -59,15 +59,16 @@ var (
 )
 
 func main() {
-	Log.SetHandler(log15.StderrHandler)
+	hndl := log15.CallerFileHandler(log15.StderrHandler)
+	Log.SetHandler(hndl)
 
 	client.AddFlags() // add -server flag
 	flag.Parse()
 
 	if *flagVerbose {
-		camutil.Log.SetHandler(log15.StderrHandler)
+		camutil.Log.SetHandler(hndl)
 	} else {
-		hndl := log15.LvlFilterHandler(log15.LvlInfo, log15.StderrHandler)
+		hndl = log15.LvlFilterHandler(log15.LvlInfo, hndl)
 		Log.SetHandler(hndl)
 		camutil.Log.SetHandler(hndl)
 	}
@@ -197,7 +198,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 				ct = r.Header.Get("Content-Type")
 			}
 		}
-		Log.Info("Content-Type: " + ct)
+		Log.Info("request Content-Type: " + ct)
 
 		switch ct {
 		case "multipart/form", "multipart/form-data", "application/x-www-form-urlencoded":
@@ -234,9 +235,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no files in request", 400)
 			return
 		case 1:
-			content, perma, err = u.UploadFile(filenames[0], permanode)
+			content, perma, err = u.UploadFile(filenames[0], mimetypes[0], permanode)
 		default:
-			content, perma, err = u.UploadFile(dn, permanode)
+			content, perma, err = u.UploadFile(dn, "", permanode)
 		}
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error uploading %q: %s", filenames, err), 500)
@@ -275,9 +276,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func saveDirectTo(destDir string, r *http.Request) (filename, mimetype string, err error) {
+func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, err error) {
 	Log.Debug("saveDirectTo", "headers", r.Header)
-	mimetype = r.Header.Get("Content-Type")
+	mimeType = r.Header.Get("Content-Type")
 	lastmod := parseLastModified(r.Header.Get("Last-Modified"), r.URL.Query().Get("mtime"))
 	cd := r.Header.Get("Content-Disposition")
 	var fh *os.File
@@ -301,7 +302,11 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimetype string, e
 		return "", "", fmt.Errorf("error creating temp file %q: %s", fn, err)
 	}
 	defer fh.Close()
-	_, err = io.Copy(fh, r.Body)
+	rdr := io.Reader(r.Body)
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		mimeType, rdr = camutil.MIMETypeFromReader(r.Body)
+	}
+	_, err = io.Copy(fh, rdr)
 	if err != nil {
 		Log.Error("saving request body", "dst", fh.Name(), "error", err)
 	}
@@ -337,10 +342,16 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			part.Close()
 			return nil, nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
 		}
-		_, err = io.Copy(fh, part)
+		mimeType := part.Header.Get("Content-Type")
+		rdr := io.Reader(part)
+		if mimeType == "" || mimeType == "application/octet-stream" {
+			mimeType, rdr = camutil.MIMETypeFromReader(rdr)
+		}
+		Log.Debug("mimeType", "part", part.Header.Get("Content-Type"), "sniffed", mimeType)
+		_, err = io.Copy(fh, rdr)
 		if err == nil {
 			filenames = append(filenames, fh.Name())
-			mimetypes = append(mimetypes, part.Header.Get("Content-Type"))
+			mimetypes = append(mimetypes, mimeType)
 		}
 		part.Close()
 		closeErr := fh.Close()
