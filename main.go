@@ -227,7 +227,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 		Log.Info("uploading", "files", filenames, "mime-types", mimetypes)
 
-		permanode := r.URL.Query().Get("permanode") == "1"
+		noPerma := r.URL.Query().Get("noperma") == "1"
 		short := r.URL.Query().Get("short") == "1"
 		var content, perma blob.Ref
 		switch len(filenames) {
@@ -235,9 +235,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no files in request", 400)
 			return
 		case 1:
-			content, perma, err = u.UploadFile(filenames[0], mimetypes[0], permanode)
+			content, perma, err = u.UploadFile(filenames[0], mimetypes[0], !noPerma, nil)
 		default:
-			content, perma, err = u.UploadFile(dn, "", permanode)
+			content, perma, err = u.UploadFile(dn, "", !noPerma, nil)
 		}
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error uploading %q: %s", filenames, err), 500)
