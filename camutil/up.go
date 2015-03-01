@@ -141,7 +141,6 @@ func (u *Uploader) FromReaderInfo(fi os.FileInfo, mime string, r io.Reader) (blo
 func (u *Uploader) UploadFile(
 	path, mimeType string,
 	permanode bool,
-	attributes map[string]string,
 ) (content, perma blob.Ref, err error) {
 	direct := u.StatReceiver != nil
 	if direct {
@@ -152,14 +151,7 @@ func (u *Uploader) UploadFile(
 		direct = fi.Mode().IsRegular()
 	}
 	if !direct {
-		if mimeType != "" && mimeType != "application/octet-stream" {
-			if attributes == nil {
-				attributes = map[string]string{"mimeType": mimeType}
-			} else if attributes["mimeType"] == "" {
-				attributes["mimeType"] = mimeType
-			}
-		}
-		return u.UploadFileExt(path, permanode, attributes)
+		return u.UploadFileExt(path, permanode)
 	}
 
 	if content, err = u.UploadFileMIME(path, mimeType); !permanode || err != nil {
@@ -170,19 +162,57 @@ func (u *Uploader) UploadFile(
 		return content, perma, err
 	}
 	perma = pbRes.BlobRef
-	if attributes == nil {
-		attributes = map[string]string{"camliContent": perma.String()}
-	} else {
-		attributes["camliContent"] = perma.String()
-	}
-	for k, v := range attributes {
-		_, err := u.Client.UploadAndSignBlob(schema.NewAddAttributeClaim(perma, k, v))
-		if err != nil {
-			return content, perma, err
-		}
-	}
+	_, err = u.Client.UploadAndSignBlob(schema.NewAddAttributeClaim(pbRes.BlobRef, "camliContent", content.String()))
 
 	return content, perma, err
+}
+
+// NewPermanode returns a new random permanode and sets the given attrs on it.
+// Returns the permanode, and the error.
+func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
+	if u.Client != nil {
+		pRes, err := u.Client.UploadNewPermanode()
+		if err != nil {
+			return blob.Ref{}, err
+		}
+		if len(attrs) > 0 {
+			err = u.SetPermanodeAttributes(pRes.BlobRef, attrs)
+		}
+		return pRes.BlobRef, err
+	}
+	cmd := exec.Command("camput", "permanode")
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return blob.Ref{}, err
+	}
+	br, ok := blob.ParseBytes(bytes.TrimSpace(out))
+	if !ok {
+		return br, fmt.Errorf("cannot parse %q as permanode blobref", out)
+	}
+	if len(attrs) > 0 {
+		err = u.SetPermanodeAttributes(br, attrs)
+	}
+	return br, err
+}
+
+// SetPermanodeAttributes sets the attributes on the given permanode.
+func (u *Uploader) SetPermanodeAttributes(perma blob.Ref, attrs map[string]string) error {
+	if u.Client != nil {
+		for k, v := range attrs {
+			if _, err := u.Client.UploadAndSignBlob(schema.NewAddAttributeClaim(perma, k, v)); err != nil {
+				return err
+			}
+		}
+	} else {
+		pS := perma.String()
+		for k, v := range attrs {
+			if err := exec.Command("camput", "attr", pS, k, v).Run(); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // UploadFileMIME uploads a regular file with the given MIME type.
@@ -207,7 +237,7 @@ func (u *Uploader) UploadFileMIME(fileName, mimeType string) (content blob.Ref, 
 
 // UploadFileExt uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
-func (u *Uploader) UploadFileExt(path string, permanode bool, attributes map[string]string) (content, perma blob.Ref, err error) {
+func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma blob.Ref, err error) {
 	Log.Info("UploadFile", "path", path, "permanode", permanode)
 	fh, err := os.Open(path)
 	if err != nil {
@@ -302,12 +332,6 @@ func (u *Uploader) UploadFileExt(path string, permanode bool, attributes map[str
 				err = fmt.Errorf("blob[%s].parts is empty!", content)
 				Log.Error(err.Error(), "blob", blb.JSON())
 			}
-		}
-	}
-
-	for k, v := range attributes {
-		if err := exec.Command("camput", "attr", perma.String(), k, v).Run(); err != nil {
-			Log.Error("camput attr", "error", err)
 		}
 	}
 	return
