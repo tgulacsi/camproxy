@@ -339,6 +339,9 @@ func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma bl
 
 // RefToBase64 returns a base64-encoded version of the ref
 func RefToBase64(br blob.Ref) string {
+	if !br.Valid() {
+		return ""
+	}
 	data, err := br.MarshalBinary()
 	if err != nil {
 		Log.Error("error marshaling", "blob", br, "error", err)
@@ -347,3 +350,5 @@ func RefToBase64(br blob.Ref) string {
 	hn := br.HashName()
 	return hn + "-" + base64.URLEncoding.EncodeToString(data[len(hn)+1:])
 }
+
+// vim: fileencoding=utf-8:
