@@ -35,6 +35,8 @@ import (
 	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
 	"camlistore.org/pkg/syncutil"
+	"camlistore.org/third_party/code.google.com/p/go.crypto/openpgp"
+	"camlistore.org/third_party/code.google.com/p/go.crypto/openpgp/armor"
 )
 
 // Uploader holds the server and args
@@ -47,6 +49,7 @@ type Uploader struct {
 	gate          *syncutil.Gate
 	mtx           sync.Mutex
 	blobserver.StatReceiver
+	*schema.Signer
 }
 
 // FileIsEmpty is the error for zero length files
@@ -85,14 +88,29 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 			Log.Error("localdisk.New", "server", server, "error", err)
 			return nil
 		}
-		u = &Uploader{server: server, gate: syncutil.NewGate(8), skipHaveCache: true,
-			StatReceiver: recv}
+		u = &Uploader{
+			server:        server,
+			gate:          syncutil.NewGate(8),
+			skipHaveCache: true,
+			StatReceiver:  recv,
+			Signer:        newDummySigner(),
+		}
 		cachedUploader[server] = u
 		return u
 	}
-	u = &Uploader{server: server, args: []string{"file"}, gate: syncutil.NewGate(8),
-		skipHaveCache: skipHaveCache, Client: client.New(server)}
-	u.StatReceiver = u.Client
+	c, err := NewClient(server)
+	if err != nil || c == nil {
+		Log.Error("NewClient", "server", server, "error", err)
+		return nil
+	}
+	u = &Uploader{
+		server:        server,
+		args:          []string{"file"},
+		gate:          syncutil.NewGate(8),
+		skipHaveCache: skipHaveCache,
+		Client:        c,
+		StatReceiver:  c,
+	}
 	if server != "" {
 		u.args = append([]string{"-server=" + server}, u.args...)
 	}
@@ -170,6 +188,7 @@ func (u *Uploader) UploadFile(
 // NewPermanode returns a new random permanode and sets the given attrs on it.
 // Returns the permanode, and the error.
 func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
+	Log.Debug("NewPermanode", "client", u.Client)
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode()
 		if err != nil {
@@ -179,6 +198,13 @@ func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
 			err = u.SetPermanodeAttributes(pRes.BlobRef, attrs)
 		}
 		return pRes.BlobRef, err
+	}
+	if u.Signer != nil {
+		signed, err := schema.NewUnsignedPermanode().Sign(u.Signer)
+		if err != nil {
+			return blob.Ref{}, err
+		}
+		return blob.RefFromString(signed), err
 	}
 	cmd := exec.Command("camput", "permanode")
 	cmd.Stderr = os.Stderr
@@ -349,6 +375,71 @@ func RefToBase64(br blob.Ref) string {
 	}
 	hn := br.HashName()
 	return hn + "-" + base64.URLEncoding.EncodeToString(data[len(hn)+1:])
+}
+
+func newDummySigner() *schema.Signer {
+	var privateKeySource *openpgp.Entity
+	for _, fn := range []string{
+		"$HOME/.config/camlistore/identity-secring.gpg",
+		"$HOME/.gnupg/secring.gpg",
+	} {
+		fh, err := os.Open(os.ExpandEnv(fn))
+		if err != nil {
+			Log.Warn("open", "file", fn, "error", err)
+			continue
+		}
+		el, err := openpgp.ReadKeyRing(fh)
+		fh.Close()
+		if err != nil {
+			Log.Error("ReadKeyRing", "file", fh.Name(), "error", err)
+			continue
+		}
+		for _, e := range el {
+			if e.PrivateKey == nil {
+				continue
+			}
+			for _, i := range e.Identities {
+				Log.Debug("found key", "identity", i.Name, "keyring", fn)
+				break
+			}
+			privateKeySource = e
+			break
+		}
+		if privateKeySource != nil {
+			break
+		}
+	}
+	if privateKeySource == nil {
+		var err error
+		if privateKeySource, err = openpgp.NewEntity(
+			"camutil", "test", "camutil@camlistore.org", nil,
+		); err != nil {
+			Log.Error("openpgp.NewEntity", "error", err)
+			return nil
+		}
+	}
+	var buf bytes.Buffer
+	hsh := blob.RefFromString("").Hash()
+	w, err := armor.Encode(io.MultiWriter(&buf, hsh), "PGP PUBLIC KEY BLOCK", nil)
+	if err != nil {
+		Log.Error("armor", "error", err)
+		return nil
+	}
+	if err = privateKeySource.PrimaryKey.Serialize(w); err != nil {
+		Log.Error("serialize", "error", err)
+	}
+	_ = w.Close()
+
+	pubKeyRef := blob.RefFromHash(hsh)
+	armoredPubKey := bytes.NewReader(buf.Bytes())
+
+	Log.Debug("NewSigner", "pubKeyRef", pubKeyRef, "armoredPubKey", buf.String())
+	signer, err := schema.NewSigner(pubKeyRef, armoredPubKey, privateKeySource)
+	if err != nil {
+		Log.Error("newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource, "error", err)
+		return nil
+	}
+	return signer
 }
 
 // vim: fileencoding=utf-8:
