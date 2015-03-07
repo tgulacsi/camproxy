@@ -133,6 +133,27 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	return u
 }
 
+// Close closes the Client/Storage.
+func (u *Uploader) Close() error {
+	var err error
+	if u.StatReceiver != nil {
+		if cl, ok := u.StatReceiver.(io.Closer); ok {
+			err = cl.Close()
+		}
+		u.StatReceiver = nil
+	}
+	if u.Client == nil {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = r.(error)
+		}
+	}()
+	err = u.Client.Close()
+	return err
+}
+
 // FromReader uploads the contents of the io.Reader.
 func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
 	Log.Debug("FromReader", "file", fileName)
