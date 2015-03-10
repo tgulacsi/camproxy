@@ -110,6 +110,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	if r.Body != nil {
 		defer r.Body.Close()
 	}
+	values := r.URL.Query()
 
 	switch r.Method {
 	case "GET":
@@ -123,12 +124,12 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "a blobref is needed!", 400)
 			return
 		}
-		content := r.URL.Query().Get("raw") != "1"
+		content := values.Get("raw") != "1"
 		okMime, nm := "", ""
 		if !content {
 			okMime = "application/json"
 		} else {
-			okMime = r.URL.Query().Get("mimeType")
+			okMime = values.Get("mimeType")
 			if okMime == "" && 1 == len(items) {
 				nm = camutil.RefToBase64(items[0])
 				okMime = mimeCache.Get(nm)
@@ -207,7 +208,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", err), 400)
 				return
 			}
-			qmtime := r.URL.Query().Get("mtime")
+			qmtime := values.Get("mtime")
 			if qmtime == "" {
 				qmtime = r.Header.Get("Last-Modified")
 			}
@@ -227,17 +228,34 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 		Log.Info("uploading", "files", filenames, "mime-types", mimetypes)
 
-		noPerma := r.URL.Query().Get("noperma") == "1"
-		short := r.URL.Query().Get("short") == "1"
+		short := values.Get("short") == "1"
+		var attrs map[string]string
+		if values.Get("noperma") != "1" { // create permanode, iff attrs present
+			attrs = make(map[string]string, len(values))
+			for k, vv := range values {
+				if !strings.HasPrefix(k, "a.") {
+					continue
+				}
+				k = k[2:]
+				if strings.HasPrefix(k, "camli") {
+					continue
+				}
+				for _, v := range vv {
+					attrs[k] = v
+					break
+				}
+			}
+		}
+
 		var content, perma blob.Ref
 		switch len(filenames) {
 		case 0:
 			http.Error(w, "no files in request", 400)
 			return
 		case 1:
-			content, perma, err = u.UploadFile(filenames[0], mimetypes[0], !noPerma)
+			content, perma, err = u.UploadFileLazyAttr(filenames[0], mimetypes[0], attrs)
 		default:
-			content, perma, err = u.UploadFile(dn, "", !noPerma)
+			content, perma, err = u.UploadFileLazyAttr(dn, "", attrs)
 		}
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error uploading %q: %s", filenames, err), 500)

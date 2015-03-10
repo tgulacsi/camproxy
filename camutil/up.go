@@ -44,6 +44,7 @@ type Uploader struct {
 	*client.Client
 	server        string
 	args          []string
+	opts          []string
 	env           []string
 	skipHaveCache bool
 	gate          *syncutil.Gate
@@ -105,23 +106,24 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	}
 	u = &Uploader{
 		server:        server,
-		args:          []string{"file"},
+		args:          make([]string, 1, 2),
+		opts:          make([]string, 0, 3),
 		gate:          syncutil.NewGate(8),
 		skipHaveCache: skipHaveCache,
 		Client:        c,
 		StatReceiver:  c,
 	}
+	u.args[0] = "camput"
 	if server != "" {
-		u.args = append([]string{"-server=" + server}, u.args...)
+		u.args = append(u.args, "-server="+server)
 	}
 	needDebugEnv := false
 	if skipHaveCache {
-		u.args = append([]string{"-havecache=false"}, u.args...)
-		u.args = append(u.args, "-statcache=false")
+		u.opts = append(u.opts, "-havecache=false", "-statcache=false")
 		needDebugEnv = true
 	}
 	if capCtime {
-		u.args = append(u.args, "-capctime")
+		u.opts = append(u.opts, "-capctime")
 		needDebugEnv = true
 	}
 	if needDebugEnv {
@@ -206,6 +208,45 @@ func (u *Uploader) UploadFile(
 	return content, perma, err
 }
 
+// UploadFileLazyAttr uploads the given path (file or directory, recursively), and
+// returns the content ref, and the permanode ref iff attrs is not empty.
+// It also sets the attributes on the permanode - but only those without "camli" prefix!
+//
+// This is lazy, so it will NOT return an error if the permanode/attrs can't be created.
+func (u *Uploader) UploadFileLazyAttr(
+	path, mimeType string,
+	attrs map[string]string,
+) (content, perma blob.Ref, err error) {
+	direct := u.StatReceiver != nil
+	if direct {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return content, perma, err
+		}
+		direct = fi.Mode().IsRegular()
+	}
+	if !direct {
+		return u.UploadFileExtLazyAttr(path, attrs)
+	}
+
+	filteredAttrs := make(map[string]string, len(attrs)+1)
+	for k, v := range attrs {
+		if strings.HasPrefix(k, "camli") {
+			continue
+		}
+		filteredAttrs[k] = v
+	}
+	if content, err = u.UploadFileMIME(path, mimeType); len(filteredAttrs) == 0 || err != nil {
+		return content, perma, err
+	}
+
+	filteredAttrs["camliContent"] = content.String()
+	if perma, err = u.NewPermanode(filteredAttrs); err != nil {
+		Log.Error("NewPermanode", "attrs", filteredAttrs, "error", err)
+	}
+	return content, perma, nil
+}
+
 // NewPermanode returns a new random permanode and sets the given attrs on it.
 // Returns the permanode, and the error.
 func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
@@ -227,20 +268,11 @@ func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
 		}
 		return blob.RefFromString(signed), err
 	}
-	cmd := exec.Command("camput", "permanode")
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	if err != nil {
+	refs, err := u.camput("permanode")
+	if err != nil || len(refs) == 0 {
 		return blob.Ref{}, err
 	}
-	br, ok := blob.ParseBytes(bytes.TrimSpace(out))
-	if !ok {
-		return br, fmt.Errorf("cannot parse %q as permanode blobref", out)
-	}
-	if len(attrs) > 0 {
-		err = u.SetPermanodeAttributes(br, attrs)
-	}
-	return br, err
+	return refs[0], err
 }
 
 // SetPermanodeAttributes sets the attributes on the given permanode.
@@ -254,7 +286,7 @@ func (u *Uploader) SetPermanodeAttributes(perma blob.Ref, attrs map[string]strin
 	} else {
 		pS := perma.String()
 		for k, v := range attrs {
-			if err := exec.Command("camput", "attr", pS, k, v).Run(); err != nil {
+			if _, err := u.camput("attr", pS, k, v); err != nil {
 				return err
 			}
 		}
@@ -285,7 +317,7 @@ func (u *Uploader) UploadFileMIME(fileName, mimeType string) (content blob.Ref, 
 // UploadFileExt uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
 func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma blob.Ref, err error) {
-	Log.Info("UploadFile", "path", path, "permanode", permanode)
+	Log.Info("UploadFileExt", "path", path, "permanode", permanode)
 	fh, err := os.Open(path)
 	if err != nil {
 		return
@@ -300,62 +332,91 @@ func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma bl
 		err = FileIsEmpty
 		return
 	}
-	i := len(u.args) + 2
-	if permanode {
-		i++
-	}
-	args := append(make([]string, 0, i), u.args...)
+	args := make([]string, 1, 2)
+	args[0] = path
 	if permanode {
 		args = append(args, "--permanode")
 	}
-	var (
-		rc   io.ReadCloser
-		out  []byte
-		blb  *schema.Blob
-		down *Downloader
-	)
-	dir, base := filepath.Split(path)
-	args = append(args, base)
+	refs, err := u.camput("file", args...)
+	if len(refs) > 0 {
+		content = refs[0]
+		if len(refs) > 1 {
+			perma = refs[1]
+		}
+	}
+	return content, perma, err
+}
+
+// UploadFileExtLazyAttr uploads the given path (file or directory, recursively), and
+// returns the content ref, the permanode ref (iff you added attributes).
+func (u *Uploader) UploadFileExtLazyAttr(path string, attrs map[string]string) (content, perma blob.Ref, err error) {
+	Log.Info("UploadFileExtLazyAttr", "path", path, "attrs", attrs)
+	content, perma, err = u.UploadFileExt(path, len(attrs) > 0)
+	if perma.Valid() {
+		if err := u.SetPermanodeAttributes(perma, attrs); err != nil {
+			Log.Error("SetPermanodeAttrs", "perma", perma.String(), "attrs", attrs, "error", err)
+		}
+	}
+	return content, perma, err
+}
+
+func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
+	args := make([]string, 0, len(u.args)+1+len(u.opts)+len(modeArgs)+1)
+	args = append(append(append(args, u.args...), mode), u.opts...)
+	var dir string
+	if mode == "file" {
+		var base string
+		dir, base = filepath.Split(modeArgs[0])
+		args = append(args, base)
+	}
+
+	refs := make([]blob.Ref, 0, 2)
 
 	u.gate.Start()
 	defer u.gate.Done()
 
+	var (
+		lastErr error
+		errbuf  bytes.Buffer
+		down    *Downloader
+	)
+
 	for i := 0; i < 10; i++ {
 		if i > 0 {
+			errbuf.Reset()
 			time.Sleep(time.Duration(i) * time.Second)
 		}
 		Log.Info("camput", "args", args)
-		c := exec.Command("camput", args...)
+		c := exec.Command(args[0], args[1:]...)
 		c.Dir = dir
 		c.Env = u.env
-		errbuf := bytes.NewBuffer(nil)
-		c.Stderr = errbuf
-		if u.skipHaveCache {
-			out, err = c.Output()
-		} else {
+		c.Stderr = &errbuf
+
+		if !u.skipHaveCache {
 			// serialize camput calls (have cache)
-			func() {
-				u.mtx.Lock()
-				defer u.mtx.Unlock()
-				out, err = c.Output()
-			}()
+			u.mtx.Lock()
+		}
+		out, err := c.Output()
+		if !u.skipHaveCache {
+			u.mtx.Unlock()
 		}
 		if err != nil {
-			err = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
-			return
+			lastErr = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
+			continue
 		}
-		var br, zbr blob.Ref
-		var ok bool
-		err = nil
 		// the last line is the permanode ref, the first is the content
-		for _, line := range bytes.Split(bytes.TrimSpace(out), []byte{'\n'}) {
-			if br, ok = blob.Parse(string(line)); ok {
-				if content == zbr {
-					content = br
-				} else {
-					perma = br
+		for _, line := range bytes.Split(out, []byte{'\n'}) {
+			if line = bytes.TrimSpace(line); len(line) == 0 {
+				continue
+			}
+			if br, ok := blob.Parse(string(line)); ok {
+				if br.Valid() {
+					refs = append(refs, br)
 				}
 			}
+		}
+		if len(refs) == 0 {
+			break
 		}
 		if down == nil {
 			if i > 0 {
@@ -363,25 +424,25 @@ func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma bl
 			}
 			if down, err = NewDownloader(u.server); err != nil {
 				Log.Error("cannot get downloader for checking uploads", "error", err)
-				err = nil
-				return
+				break
 			}
 		}
-		if rc, err = fetch(down.Fetcher, content); err == nil {
-			blb, err = schema.BlobFromReader(content, rc)
+		content := refs[0]
+		if rc, err := fetch(down.Fetcher, content); err == nil {
+			blb, err := schema.BlobFromReader(content, rc)
 			rc.Close()
 			if err != nil {
 				Log.Error("error getting back blob", "blob", content, "error", err)
 			} else {
 				if len(blb.ByteParts()) > 0 {
-					return
+					break
 				}
 				err = fmt.Errorf("blob[%s].parts is empty!", content)
 				Log.Error(err.Error(), "blob", blb.JSON())
 			}
 		}
 	}
-	return
+	return refs, lastErr
 }
 
 // RefToBase64 returns a base64-encoded version of the ref
