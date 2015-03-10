@@ -246,6 +246,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+		Log.Debug("LazyAttr", "attrs", attrs)
 
 		var content, perma blob.Ref
 		switch len(filenames) {

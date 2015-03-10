@@ -254,41 +254,59 @@ func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode()
 		if err != nil {
+			Log.Error("UploadNewPermanode", "error", err)
 			return blob.Ref{}, err
 		}
 		if len(attrs) > 0 {
-			err = u.SetPermanodeAttributes(pRes.BlobRef, attrs)
+			err = u.SetPermanodeAttrs(pRes.BlobRef, attrs)
 		}
 		return pRes.BlobRef, err
 	}
 	if u.Signer != nil {
 		signed, err := schema.NewUnsignedPermanode().Sign(u.Signer)
 		if err != nil {
+			Log.Error("Sign", "signer", u.Signer, "error", err)
 			return blob.Ref{}, err
 		}
 		return blob.RefFromString(signed), err
 	}
 	refs, err := u.camput("permanode")
+	Log.Debug("camput permanode", "refs", refs, "error", err)
 	if err != nil || len(refs) == 0 {
 		return blob.Ref{}, err
 	}
+	err = u.SetPermanodeAttrs(refs[0], attrs)
 	return refs[0], err
 }
 
-// SetPermanodeAttributes sets the attributes on the given permanode.
-func (u *Uploader) SetPermanodeAttributes(perma blob.Ref, attrs map[string]string) error {
+// SetPermanodeAttrs sets the attributes on the given permanode.
+func (u *Uploader) SetPermanodeAttrs(perma blob.Ref, attrs map[string]string) error {
+	specLog := Log.New("perma", perma.String())
+	var setAttr func(k, v string) (blob.Ref, error)
 	if u.Client != nil {
-		for k, v := range attrs {
-			if _, err := u.Client.UploadAndSignBlob(schema.NewAddAttributeClaim(perma, k, v)); err != nil {
-				return err
+		setAttr = func(k, v string) (blob.Ref, error) {
+			pRes, err := u.Client.UploadAndSignBlob(schema.NewSetAttributeClaim(perma, k, v))
+			if err != nil {
+				return blob.Ref{}, err
 			}
+			return pRes.BlobRef, nil
 		}
 	} else {
 		pS := perma.String()
-		for k, v := range attrs {
-			if _, err := u.camput("attr", pS, k, v); err != nil {
-				return err
+		setAttr = func(k, v string) (blob.Ref, error) {
+			refs, err := u.camput("attr", pS, k, v)
+			if err != nil || len(refs) == 0 {
+				return blob.Ref{}, err
 			}
+			return refs[0], nil
+		}
+	}
+	for k, v := range attrs {
+		if br, err := setAttr(k, v); err != nil {
+			specLog.Error("SetPermanodeAttrs", "key", k, "value", v, "error", err)
+			return err
+		} else {
+			specLog.Debug("SetPermanodeAttrs", "key", k, "value", v, "claim", br.String())
 		}
 	}
 	return nil
@@ -353,7 +371,7 @@ func (u *Uploader) UploadFileExtLazyAttr(path string, attrs map[string]string) (
 	Log.Info("UploadFileExtLazyAttr", "path", path, "attrs", attrs)
 	content, perma, err = u.UploadFileExt(path, len(attrs) > 0)
 	if perma.Valid() {
-		if err := u.SetPermanodeAttributes(perma, attrs); err != nil {
+		if err := u.SetPermanodeAttrs(perma, attrs); err != nil {
 			Log.Error("SetPermanodeAttrs", "perma", perma.String(), "attrs", attrs, "error", err)
 		}
 	}
