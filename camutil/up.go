@@ -250,7 +250,6 @@ func (u *Uploader) UploadFileLazyAttr(
 // NewPermanode returns a new random permanode and sets the given attrs on it.
 // Returns the permanode, and the error.
 func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
-	Log.Debug("NewPermanode", "client", u.Client)
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode()
 		if err != nil {
