@@ -261,7 +261,6 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	default:
 		return errors.New("unknown blob type: " + b.Type())
 	}
-	panic("unreachable")
 }
 
 func setFileMeta(name string, blob *schema.Blob) error {
