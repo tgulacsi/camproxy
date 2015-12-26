@@ -34,9 +34,9 @@ import (
 	"camlistore.org/pkg/blobserver/localdisk"
 	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
-	"camlistore.org/pkg/syncutil"
 	"camlistore.org/third_party/code.google.com/p/go.crypto/openpgp"
 	"camlistore.org/third_party/code.google.com/p/go.crypto/openpgp/armor"
+	"go4.org/syncutil"
 )
 
 // Uploader holds the server and args
