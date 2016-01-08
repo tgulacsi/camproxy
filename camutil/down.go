@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net/http"
 	"os/exec"
 	"strings"
 	"sync"
@@ -76,7 +75,7 @@ func NewClient(server string) (*client.Client, error) {
 		}
 		c = client.NewStorageClient(bs)
 	} else {
-		c = client.New(server)
+		c = client.New(server, client.OptionInsecure(true))
 		if err := c.SetupAuth(); err != nil {
 			return nil, err
 		}
@@ -113,11 +112,6 @@ func NewDownloader(server string) (*Downloader, error) {
 		cachedDownloader[server] = down
 		return down, nil
 	}
-	down.cl.InsecureTLS = InsecureTLS
-	tr := down.cl.TransportForConfig(&client.TransportConfig{
-		Verbose: Verbose,
-	})
-	down.cl.SetHTTPClient(&http.Client{Transport: tr})
 
 	down.Fetcher, err = cacher.NewDiskCache(down.cl)
 	if err != nil {
