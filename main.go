@@ -93,7 +93,9 @@ func main() {
 	defer func() {
 		camutil.Close()
 	}()
-	mimeCache = camutil.NewMimeCache(filepath.Join(os.TempDir(), "mimecache.kv"), 0)
+	mimeCache = camutil.NewMimeCache(filepath.Join(os.TempDir(),
+		"mimecache-"+os.Getenv("BRUNO_CUS")+"_"+os.Getenv("BRUNO_ENV")+".kv"),
+		0)
 	defer mimeCache.Close()
 	Log.Info("Listening", "http", s.Addr, "camlistore", server)
 	if err := s.ListenAndServe(); err != nil {

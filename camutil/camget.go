@@ -26,12 +26,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"camlistore.org/pkg/blob"
 	"camlistore.org/pkg/index"
 	"camlistore.org/pkg/osutil"
 	"camlistore.org/pkg/schema"
-	"camlistore.org/pkg/types"
 )
 
 // A little less than the sniffer will take, so we don't truncate.
@@ -43,8 +43,9 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	if err != nil {
 		return err
 	}
-	rcc := types.NewOnceCloser(rc)
-	defer rcc.Close()
+	var onceClose sync.Once
+	closeRc := func() { onceClose.Do(func() { rc.Close() }) }
+	defer closeRc()
 
 	sniffer := index.NewBlobSniffer(br)
 	_, err = io.CopyN(sniffer, rc, sniffSize)
@@ -71,7 +72,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		_, err = io.Copy(f, r)
 		return err
 	}
-	rcc.Close()
+	closeRc()
 
 	switch b.Type() {
 	case "directory":
