@@ -32,16 +32,9 @@ import (
 	"camlistore.org/pkg/cacher"
 	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
-
-	"gopkg.in/inconshreveable/log15.v2"
 )
 
-// Log is discarded by default. Use Log.SetHandler to set destionation.
-var Log = log15.New("lib", "camutil")
-
-func init() {
-	Log.SetHandler(log15.DiscardHandler())
-}
+var Log = func(keyvals ...interface{}) error { return nil }
 
 // Downloader is the struct for downloading file/dir blobs
 type Downloader struct {
@@ -118,7 +111,7 @@ func NewDownloader(server string) (*Downloader, error) {
 		return nil, fmt.Errorf("Error setting up local disk cache: %v", err)
 	}
 	if Verbose {
-		Log.Info("Using temp blob cache directory " + down.Fetcher.(*cacher.DiskCache).Root)
+		Log("msg", "Using temp blob cache directory "+down.Fetcher.(*cacher.DiskCache).Root)
 	}
 	if server != "" {
 		down.args = []string{"-server=" + server}
@@ -205,17 +198,16 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 	for _, br := range items {
 		if contents {
 			rc, err = schema.NewFileReader(down.Fetcher, br)
-			Log.Debug("NewFileReader", "blob", br, "error", err)
 			if err == nil {
 				rc.(*schema.FileReader).LoadAllChunks()
 			}
 		} else {
 			var b *blob.Blob
 			b, err = blob.FromFetcher(down.Fetcher, br)
-			if err == nil {
+			if err == nil && Verbose {
 				rc = b.Open()
-				Log.Debug("blob", "ref", br.String(),
-					"blob", log15.Lazy{func() string {
+				Log("blob", "ref", br.String(),
+					"blob", func() string {
 						var buf bytes.Buffer
 						_, err = io.Copy(&buf, rc)
 						rc.Close()
@@ -224,7 +216,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 							io.Closer
 						}{bytes.NewReader(buf.Bytes()), ioutil.NopCloser(nil)}
 						return buf.String()
-					}})
+					}())
 			}
 		}
 		if err == nil {
@@ -232,7 +224,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 			closers = append(closers, rc)
 			continue
 		}
-		Log.Error("downloading", "blog", br, "error", err)
+		Log("msg", "downloading", "blog", br, "error", err)
 		args := append(make([]string, 0, len(down.args)+3), down.args...)
 		if contents {
 			args = append(args, "-contents=true")
@@ -247,7 +239,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 		if rc, err = c.StdoutPipe(); err != nil {
 			return nil, fmt.Errorf("error createing stdout pipe for camget %q: %s (%v)", args, errbuf.String(), err)
 		}
-		Log.Info("calling camget", "args", args)
+		Log("msg", "calling camget", "args", args)
 		if err = c.Run(); err != nil {
 			return nil, fmt.Errorf("error calling camget %q: %s (%v)", args, errbuf.String(), err)
 		}
@@ -267,7 +259,7 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
 	for _, br := range items {
 		if err := smartFetch(down.Fetcher, destDir, br); err != nil {
-			Log.Crit("Save", "error", err)
+			Log("msg", "Save", "error", err)
 			return err
 		}
 	}
@@ -275,9 +267,6 @@ func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) e
 }
 
 func fetch(src blob.Fetcher, br blob.Ref) (r io.ReadCloser, err error) {
-	if Verbose {
-		Log.Debug("Fetch", "blob", br)
-	}
 	r, _, err = src.Fetch(br)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to fetch %s: %s", br, err)

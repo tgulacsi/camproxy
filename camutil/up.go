@@ -86,7 +86,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	if strings.HasPrefix(server, "file://") {
 		recv, err := localdisk.New(server[7:])
 		if err != nil {
-			Log.Error("localdisk.New", "server", server, "error", err)
+			Log("msg", "localdisk.New", "server", server, "error", err)
 			return nil
 		}
 		u = &Uploader{
@@ -101,7 +101,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	}
 	c, err := NewClient(server)
 	if err != nil || c == nil {
-		Log.Error("NewClient", "server", server, "error", err)
+		Log("msg", "NewClient", "server", server, "error", err)
 		return nil
 	}
 	u = &Uploader{
@@ -158,7 +158,6 @@ func (u *Uploader) Close() error {
 
 // FromReader uploads the contents of the io.Reader.
 func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
-	Log.Debug("FromReader", "file", fileName)
 	u.gate.Start()
 	defer u.gate.Done()
 	return schema.WriteFileFromReader(u.StatReceiver, filepath.Base(fileName), r)
@@ -168,7 +167,6 @@ func (u *Uploader) FromReader(fileName string, r io.Reader) (blob.Ref, error) {
 // Creation time (unixCtime) is capped at modification time (unixMtime), and
 // a "mimeType" field is set, if mime is not empty.
 func (u *Uploader) FromReaderInfo(fi os.FileInfo, mime string, r io.Reader) (blob.Ref, error) {
-	Log.Debug("FromReaderInfo", "mime", mime)
 	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
 	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
 	file = file.SetType("file")
@@ -242,7 +240,7 @@ func (u *Uploader) UploadFileLazyAttr(
 
 	filteredAttrs["camliContent"] = content.String()
 	if perma, err = u.NewPermanode(filteredAttrs); err != nil {
-		Log.Error("NewPermanode", "attrs", filteredAttrs, "error", err)
+		Log("msg", "NewPermanode", "attrs", filteredAttrs, "error", err)
 	}
 	return content, perma, nil
 }
@@ -253,7 +251,7 @@ func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode()
 		if err != nil {
-			Log.Error("UploadNewPermanode", "error", err)
+			Log("msg", "UploadNewPermanode", "error", err)
 			return blob.Ref{}, err
 		}
 		if len(attrs) > 0 {
@@ -264,13 +262,12 @@ func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
 	if u.Signer != nil {
 		signed, err := schema.NewUnsignedPermanode().Sign(u.Signer)
 		if err != nil {
-			Log.Error("Sign", "signer", u.Signer, "error", err)
+			Log("msg", "Sign", "signer", u.Signer, "error", err)
 			return blob.Ref{}, err
 		}
 		return blob.RefFromString(signed), err
 	}
 	refs, err := u.camput("permanode")
-	Log.Debug("camput permanode", "refs", refs, "error", err)
 	if err != nil || len(refs) == 0 {
 		return blob.Ref{}, err
 	}
@@ -280,7 +277,6 @@ func (u *Uploader) NewPermanode(attrs map[string]string) (blob.Ref, error) {
 
 // SetPermanodeAttrs sets the attributes on the given permanode.
 func (u *Uploader) SetPermanodeAttrs(perma blob.Ref, attrs map[string]string) error {
-	specLog := Log.New("perma", perma.String())
 	var setAttr func(k, v string) (blob.Ref, error)
 	if u.Client != nil {
 		setAttr = func(k, v string) (blob.Ref, error) {
@@ -301,11 +297,9 @@ func (u *Uploader) SetPermanodeAttrs(perma blob.Ref, attrs map[string]string) er
 		}
 	}
 	for k, v := range attrs {
-		if br, err := setAttr(k, v); err != nil {
-			specLog.Error("SetPermanodeAttrs", "key", k, "value", v, "error", err)
+		if _, err := setAttr(k, v); err != nil {
+			Log("msg", "SetPermanodeAttrs", "key", k, "value", v, "perma", perma.String(), "error", err)
 			return err
-		} else {
-			specLog.Debug("SetPermanodeAttrs", "key", k, "value", v, "claim", br.String())
 		}
 	}
 	return nil
@@ -326,7 +320,6 @@ func (u *Uploader) UploadFileMIME(fileName, mimeType string) (content blob.Ref, 
 	if mimeType == "" || mimeType == "application/octet-stream" {
 		mimeType, rdr = MIMETypeFromReader(fh)
 	}
-	Log.Debug("direct upload with FromReader onto", "statreceiver", u.StatReceiver)
 	br, err := u.FromReaderInfo(fi, mimeType, rdr)
 	return br, err
 }
@@ -334,7 +327,7 @@ func (u *Uploader) UploadFileMIME(fileName, mimeType string) (content blob.Ref, 
 // UploadFileExt uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
 func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma blob.Ref, err error) {
-	Log.Info("UploadFileExt", "path", path, "permanode", permanode)
+	Log("msg", "UploadFileExt", "path", path, "permanode", permanode)
 	fh, err := os.Open(path)
 	if err != nil {
 		return
@@ -367,11 +360,11 @@ func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma bl
 // UploadFileExtLazyAttr uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (iff you added attributes).
 func (u *Uploader) UploadFileExtLazyAttr(path string, attrs map[string]string) (content, perma blob.Ref, err error) {
-	Log.Info("UploadFileExtLazyAttr", "path", path, "attrs", attrs)
+	Log("msg", "UploadFileExtLazyAttr", "path", path, "attrs", attrs)
 	content, perma, err = u.UploadFileExt(path, len(attrs) > 0)
 	if perma.Valid() {
 		if err := u.SetPermanodeAttrs(perma, attrs); err != nil {
-			Log.Error("SetPermanodeAttrs", "perma", perma.String(), "attrs", attrs, "error", err)
+			Log("msg", "SetPermanodeAttrs", "perma", perma.String(), "attrs", attrs, "error", err)
 		}
 	}
 	return content, perma, err
@@ -403,7 +396,7 @@ func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
 			errbuf.Reset()
 			time.Sleep(time.Duration(i) * time.Second)
 		}
-		Log.Info("camput", "args", args)
+		Log("msg", "camput", "args", args)
 		c := exec.Command(args[0], args[1:]...)
 		c.Dir = dir
 		c.Env = u.env
@@ -440,7 +433,7 @@ func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
 				break
 			}
 			if down, err = NewDownloader(u.server); err != nil {
-				Log.Error("cannot get downloader for checking uploads", "error", err)
+				Log("msg", "cannot get downloader for checking uploads", "error", err)
 				break
 			}
 		}
@@ -449,13 +442,13 @@ func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
 			blb, err := schema.BlobFromReader(content, rc)
 			rc.Close()
 			if err != nil {
-				Log.Error("error getting back blob", "blob", content, "error", err)
+				Log("msg", "error getting back blob", "blob", content, "error", err)
 			} else {
 				if len(blb.ByteParts()) > 0 {
 					break
 				}
 				err = fmt.Errorf("blob[%s].parts is empty!", content)
-				Log.Error(err.Error(), "blob", blb.JSON())
+				Log("msg", "blob", blb.JSON())
 			}
 		}
 	}
@@ -469,7 +462,7 @@ func RefToBase64(br blob.Ref) string {
 	}
 	data, err := br.MarshalBinary()
 	if err != nil {
-		Log.Error("error marshaling", "blob", br, "error", err)
+		Log("msg", "error marshaling", "blob", br, "error", err)
 		return ""
 	}
 	hn := br.HashName()
@@ -484,22 +477,18 @@ func newDummySigner() *schema.Signer {
 	} {
 		fh, err := os.Open(os.ExpandEnv(fn))
 		if err != nil {
-			Log.Warn("open", "file", fn, "error", err)
+			Log("msg", "open", "file", fn, "error", err)
 			continue
 		}
 		el, err := openpgp.ReadKeyRing(fh)
 		fh.Close()
 		if err != nil {
-			Log.Error("ReadKeyRing", "file", fh.Name(), "error", err)
+			Log("msg", "ReadKeyRing", "file", fh.Name(), "error", err)
 			continue
 		}
 		for _, e := range el {
 			if e.PrivateKey == nil {
 				continue
-			}
-			for _, i := range e.Identities {
-				Log.Debug("found key", "identity", i.Name, "keyring", fn)
-				break
 			}
 			privateKeySource = e
 			break
@@ -513,7 +502,7 @@ func newDummySigner() *schema.Signer {
 		if privateKeySource, err = openpgp.NewEntity(
 			"camutil", "test", "camutil@camlistore.org", nil,
 		); err != nil {
-			Log.Error("openpgp.NewEntity", "error", err)
+			Log("msg", "openpgp.NewEntity", "error", err)
 			return nil
 		}
 	}
@@ -521,21 +510,20 @@ func newDummySigner() *schema.Signer {
 	hsh := blob.RefFromString("").Hash()
 	w, err := armor.Encode(io.MultiWriter(&buf, hsh), "PGP PUBLIC KEY BLOCK", nil)
 	if err != nil {
-		Log.Error("armor", "error", err)
+		Log("msg", "armor", "error", err)
 		return nil
 	}
 	if err = privateKeySource.PrimaryKey.Serialize(w); err != nil {
-		Log.Error("serialize", "error", err)
+		Log("msg", "serialize", "error", err)
 	}
 	_ = w.Close()
 
 	pubKeyRef := blob.RefFromHash(hsh)
 	armoredPubKey := bytes.NewReader(buf.Bytes())
 
-	Log.Debug("NewSigner", "pubKeyRef", pubKeyRef, "armoredPubKey", buf.String())
 	signer, err := schema.NewSigner(pubKeyRef, armoredPubKey, privateKeySource)
 	if err != nil {
-		Log.Error("newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource, "error", err)
+		Log("msg", "newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource, "error", err)
 		return nil
 	}
 	return signer

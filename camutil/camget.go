@@ -58,7 +58,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 
 	if !ok {
 		if Verbose {
-			Log.Info("Fetching opaque data", "blob", br, "destination", targ)
+			Log("msg", "Fetching opaque data", "blob", br, "destination", targ)
 		}
 
 		// opaque data - put it in a file
@@ -78,13 +78,13 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	case "directory":
 		dir := filepath.Join(targ, b.FileName())
 		if Verbose {
-			Log.Info("Fetching directory", "blob", br, "destination", dir)
+			Log("msg", "Fetching directory", "blob", br, "destination", dir)
 		}
 		if err := os.MkdirAll(dir, b.FileMode()); err != nil {
 			return err
 		}
 		if err := setFileMeta(dir, b); err != nil {
-			Log.Error("setFileMeta", "error", err)
+			Log("msg", "setFileMeta", "error", err)
 		}
 		entries, ok := b.DirectoryEntries()
 		if !ok {
@@ -93,7 +93,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		return smartFetch(src, dir, entries)
 	case "static-set":
 		if Verbose {
-			Log.Info("Fetching directory entries", "blob", br, "destination", targ)
+			Log("msg", "Fetching directory entries", "blob", br, "destination", targ)
 		}
 
 		// directory entries
@@ -136,13 +136,13 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 
 		if fi, err := os.Stat(name); err == nil && fi.Size() == fr.Size() {
 			if Verbose {
-				Log.Info("Skipping (already exists).", "file", name)
+				Log("msg", "Skipping (already exists).", "file", name)
 			}
 			return nil
 		}
 
 		if Verbose {
-			Log.Info("Writing", "blob", br, "destination", name)
+			Log("msg", "Writing", "blob", br, "destination", name)
 		}
 
 		f, err := os.Create(name)
@@ -154,7 +154,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 			return fmt.Errorf("Copying %s to %s: %v", br, name, err)
 		}
 		if err := setFileMeta(name, b); err != nil {
-			Log.Error("setFileMeta", "error", err)
+			Log("msg", "setFileMeta", "error", err)
 		}
 		return nil
 	case "symlink":
@@ -172,7 +172,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		name := filepath.Join(targ, sl.FileName())
 		if _, err := os.Lstat(name); err == nil {
 			if Verbose {
-				Log.Info("Skipping creating symbolic link " + name + ": A file with that name exists")
+				Log("msg", "Skipping creating symbolic link "+name+": A file with that name exists")
 			}
 			return nil
 		}
@@ -205,13 +205,13 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 
 		if _, err := os.Lstat(name); err == nil {
-			Log.Info("Skipping FIFO " + name + ": A file with that name already exists")
+			Log("msg", "Skipping FIFO "+name+": A file with that name already exists")
 			return nil
 		}
 
 		err = osutil.Mkfifo(name, 0600)
 		if err == osutil.ErrNotSupported {
-			Log.Warn("Skipping FIFO " + name + ": Unsupported filetype")
+			Log("msg", "Skipping FIFO "+name+": Unsupported filetype")
 			return nil
 		}
 		if err != nil {
@@ -219,7 +219,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 
 		if err := setFileMeta(name, b); err != nil {
-			Log.Error("setFileMeta", "error", err)
+			Log("msg", "setFileMeta", "error", err)
 		}
 
 		return nil
@@ -240,13 +240,13 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 
 		if _, err := os.Lstat(name); err == nil {
-			Log.Info("Skipping socket " + name + ": A file with that name already exists")
+			Log("msg", "Skipping socket "+name+": A file with that name already exists")
 			return nil
 		}
 
 		err = osutil.Mksocket(name)
 		if err == osutil.ErrNotSupported {
-			Log.Warn("Skipping socket " + name + ": Unsupported filetype")
+			Log("msg", "Skipping socket "+name+": Unsupported filetype")
 			return nil
 		}
 		if err != nil {
@@ -254,7 +254,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 
 		if err := setFileMeta(name, b); err != nil {
-			Log.Error("setFileMeta", "error", err)
+			Log("msg", "setFileMeta", "error", err)
 		}
 
 		return nil

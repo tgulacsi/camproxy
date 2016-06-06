@@ -67,7 +67,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 
 	var err error
 	if mc.db, err = kvfile.NewStorage(filename); err != nil {
-		Log.Error("cannot open/create db", "file", filename, "error", err)
+		Log("msg", "cannot open/create db", "file", filename, "error", err)
 		mc.db = nil
 	}
 	return mc
@@ -102,7 +102,7 @@ func (mc *MimeCache) Set(key, mime string) {
 	mc.mem.Add(key, mime)
 	if mc.db != nil {
 		if err := mc.db.Set(key, mime); err != nil {
-			Log.Error("error setting", "key", key, "mime", mime, "db", mc.db, "error", err)
+			Log("msg", "error setting", "key", key, "mime", mime, "db", mc.db, "error", err)
 		}
 	}
 }

@@ -35,13 +35,13 @@ func SetupBasicAuthChecker(handler http.HandlerFunc, camliAuth string) http.Hand
 	}
 	parts := strings.Split(camliAuth, ":")
 	if len(parts) < 3 || parts[0] != "userpass" {
-		Log.Error("unrecognizable camliAuth " + camliAuth)
+		Log("msg", "unrecognizable camliAuth "+camliAuth)
 		return handler
 	}
 	username := parts[1]
 	hsh := sha1.New()
 	if _, err := io.WriteString(hsh, parts[2]); err != nil {
-		Log.Crit("error hashing user:passw", "error", err)
+		Log("msg", "error hashing user:passw", "error", err)
 		return nil
 	}
 	passwd := "{SHA}" + base64.StdEncoding.EncodeToString(hsh.Sum(nil))
