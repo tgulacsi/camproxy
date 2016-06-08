@@ -38,6 +38,7 @@ import (
 	"camlistore.org/pkg/client"
 
 	"github.com/go-kit/kit/log"
+	"github.com/pkg/errors"
 	"github.com/tgulacsi/camproxy/camutil"
 )
 
@@ -315,7 +316,7 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, e
 		fh, err = os.Create(fn)
 	}
 	if err != nil {
-		return "", "", fmt.Errorf("error creating temp file %q: %s", fn, err)
+		return "", "", errors.Wrapf(err, "create temp file %q", fn)
 	}
 	defer fh.Close()
 	rdr := io.Reader(r.Body)
@@ -357,7 +358,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 		fh, err := os.Create(fn)
 		if err != nil {
 			part.Close()
-			return nil, nil, fmt.Errorf("error creating temp file %q: %s", fn, err)
+			return nil, nil, errors.Wrapf(err, "create temp file %q", fn)
 		}
 		mimeType := part.Header.Get("Content-Type")
 		rdr := io.Reader(part)
@@ -375,7 +376,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			err = closeErr
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("error writing to %q: %s", fn, err)
+			return nil, nil, errors.Wrapf(err, "write %q", fn)
 		}
 		lastmod = parseLastModified(part.Header.Get("Last-Modified"), qmtime)
 		if !lastmod.IsZero() {

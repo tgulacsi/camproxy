@@ -21,7 +21,6 @@ package camutil
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -32,6 +31,7 @@ import (
 	"camlistore.org/pkg/index"
 	"camlistore.org/pkg/osutil"
 	"camlistore.org/pkg/schema"
+	"github.com/pkg/errors"
 )
 
 // A little less than the sniffer will take, so we don't truncate.
@@ -64,7 +64,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		// opaque data - put it in a file
 		f, err := os.Create(targ)
 		if err != nil {
-			return fmt.Errorf("opaque: %v", err)
+			return errors.Wrap(err, "opaque")
 		}
 		defer f.Close()
 		body, _ := sniffer.Body()
@@ -88,7 +88,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 		entries, ok := b.DirectoryEntries()
 		if !ok {
-			return fmt.Errorf("bad entries blobref in dir %v", b.BlobRef())
+			return errors.New(fmt.Sprintf("bad entries blobref in dir %v", b.BlobRef()))
 		}
 		return smartFetch(src, dir, entries)
 	case "static-set":
@@ -127,7 +127,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	case "file":
 		fr, err := schema.NewFileReader(src, br)
 		if err != nil {
-			return fmt.Errorf("NewFileReader: %v", err)
+			return errors.Wrap(err, "NewFileReader")
 		}
 		fr.LoadAllChunks()
 		defer fr.Close()
@@ -147,11 +147,11 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 
 		f, err := os.Create(name)
 		if err != nil {
-			return fmt.Errorf("file type: %v", err)
+			return errors.Wrap(err, "file type")
 		}
 		defer f.Close()
 		if _, err := io.Copy(f, fr); err != nil {
-			return fmt.Errorf("Copying %s to %s: %v", br, name, err)
+			return errors.Wrapf(err, "copy %s to %s", br, name)
 		}
 		if err := setFileMeta(name, b); err != nil {
 			Log("msg", "setFileMeta", "error", err)
@@ -215,7 +215,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("%s: osutil.Mkfifo(): %v", name, err)
+			return errors.Wrapf(err, "osutil.Mkfifo(%q, 0600)", name)
 		}
 
 		if err := setFileMeta(name, b); err != nil {
@@ -250,7 +250,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 			return nil
 		}
 		if err != nil {
-			return fmt.Errorf("%s: %v", name, err)
+			return errors.Wrap(err, name)
 		}
 
 		if err := setFileMeta(name, b); err != nil {

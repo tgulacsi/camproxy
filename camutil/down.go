@@ -22,7 +22,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os/exec"
 	"strings"
 	"sync"
@@ -32,6 +31,7 @@ import (
 	"camlistore.org/pkg/cacher"
 	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
+	"github.com/pkg/errors"
 )
 
 var Log = func(keyvals ...interface{}) error { return nil }
@@ -108,7 +108,7 @@ func NewDownloader(server string) (*Downloader, error) {
 
 	down.Fetcher, err = cacher.NewDiskCache(down.cl)
 	if err != nil {
-		return nil, fmt.Errorf("Error setting up local disk cache: %v", err)
+		return nil, errors.Wrap(err, "setup local disk cache")
 	}
 	if Verbose {
 		Log("msg", "Using temp blob cache directory "+down.Fetcher.(*cacher.DiskCache).Root)
@@ -161,12 +161,12 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	t = []byte(arg[:i])
 	i = bytes.IndexByte(t, byte('-'))
 	if i < 0 {
-		err = fmt.Errorf("no - in %q", arg)
+		err = errors.New(fmt.Sprintf("no - in %q", arg))
 		return
 	}
 	n, err = base64.URLEncoding.Decode(b[:cap(b)], t[i+1:])
 	if err != nil {
-		err = fmt.Errorf("cannot decode %q as base64: %s", t[i+1:], err)
+		err = errors.Wrapf(err, "cannot decode %q as base64", t[i+1:])
 		return
 	}
 	b = b[:n]
@@ -180,7 +180,7 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	arg = string(t[:i+1+n])
 	br, ok := blob.Parse(arg)
 	if !ok {
-		err = fmt.Errorf("cannot parse %q as blobref", arg)
+		err = errors.New(fmt.Sprintf("cannot parse %q as blobref", arg))
 		return
 	}
 	return br, nil
@@ -204,27 +204,16 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 		} else {
 			var b *blob.Blob
 			b, err = blob.FromFetcher(down.Fetcher, br)
-			if err == nil && Verbose {
+			if err == nil {
 				rc = b.Open()
-				Log("blob", "ref", br.String(),
-					"blob", func() string {
-						var buf bytes.Buffer
-						_, err = io.Copy(&buf, rc)
-						rc.Close()
-						rc = struct {
-							io.Reader
-							io.Closer
-						}{bytes.NewReader(buf.Bytes()), ioutil.NopCloser(nil)}
-						return buf.String()
-					}())
 			}
 		}
-		if err == nil {
+		if err == nil && rc != nil {
 			readers = append(readers, rc)
 			closers = append(closers, rc)
 			continue
 		}
-		Log("msg", "downloading", "blog", br, "error", err)
+		Log("msg", "downloading", "blob", br, "error", err)
 		args := append(make([]string, 0, len(down.args)+3), down.args...)
 		if contents {
 			args = append(args, "-contents=true")
@@ -234,19 +223,23 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 		}
 		args = append(args, br.String())
 		c := exec.Command("camget", args...)
-		errbuf := bytes.NewBuffer(nil)
-		c.Stderr = errbuf
+		var errBuf bytes.Buffer
+		c.Stderr = &errBuf
 		if rc, err = c.StdoutPipe(); err != nil {
-			return nil, fmt.Errorf("error createing stdout pipe for camget %q: %s (%v)", args, errbuf.String(), err)
+			return nil, errors.Wrapf(err, "create stdout pipe for camget %q: %s", args, errBuf.Bytes())
 		}
 		Log("msg", "calling camget", "args", args)
 		if err = c.Run(); err != nil {
-			return nil, fmt.Errorf("error calling camget %q: %s (%v)", args, errbuf.String(), err)
+			return nil, errors.Wrapf(err, "call camget %q: %s", args, errBuf.Bytes())
 		}
 		readers = append(readers, rc)
 		closers = append(closers, rc)
 	}
 
+	Log("readers", len(readers))
+	if len(readers) == 0 {
+		return nil, io.EOF
+	}
 	return struct {
 		io.Reader
 		io.Closer
@@ -269,7 +262,7 @@ func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) e
 func fetch(src blob.Fetcher, br blob.Ref) (r io.ReadCloser, err error) {
 	r, _, err = src.Fetch(br)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch %s: %s", br, err)
+		return nil, errors.Wrapf(err, "fetch %s", br)
 	}
 	return r, err
 }

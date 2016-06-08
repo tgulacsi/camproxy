@@ -19,7 +19,6 @@ package camutil
 import (
 	"bytes"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -34,6 +33,7 @@ import (
 	"camlistore.org/pkg/blobserver/localdisk"
 	"camlistore.org/pkg/client"
 	"camlistore.org/pkg/schema"
+	"github.com/pkg/errors"
 	"go4.org/syncutil"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
@@ -411,7 +411,7 @@ func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
 			u.mtx.Unlock()
 		}
 		if err != nil {
-			lastErr = fmt.Errorf("error calling camput %q: %s (%s)", args, errbuf.Bytes(), err)
+			lastErr = errors.Wrapf(err, "call camput %q: %s", args, errbuf.Bytes())
 			continue
 		}
 		// the last line is the permanode ref, the first is the content
@@ -447,7 +447,7 @@ func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
 				if len(blb.ByteParts()) > 0 {
 					break
 				}
-				err = fmt.Errorf("blob[%s].parts is empty!", content)
+				err = errors.New(fmt.Sprintf("blob[%s].parts is empty!", content))
 				Log("msg", "blob", blb.JSON())
 			}
 		}
