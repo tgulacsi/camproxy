@@ -397,7 +397,7 @@ func (u *Uploader) camput(mode string, modeArgs ...string) ([]blob.Ref, error) {
 			time.Sleep(time.Duration(i) * time.Second)
 		}
 		Log("msg", "camput", "args", args)
-		c := exec.Command(args[0], args[1:]...)
+		c := exec.Command("camput", args[0:]...)
 		c.Dir = dir
 		c.Env = u.env
 		c.Stderr = &errbuf
