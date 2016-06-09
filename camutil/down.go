@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -206,6 +207,10 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 			b, err = blob.FromFetcher(down.Fetcher, br)
 			if err == nil {
 				rc = b.Open()
+			} else if err == os.ErrNotExist {
+				return nil, err
+			} else {
+				Log("error", err)
 			}
 		}
 		if err == nil && rc != nil {
