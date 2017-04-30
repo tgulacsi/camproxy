@@ -178,7 +178,7 @@ func (u *Uploader) FromReaderInfo(fi os.FileInfo, mime string, r io.Reader) (blo
 // UploadFile uploads the given path (file or directory, recursively), and
 // returns the content ref, the permanode ref (if you asked for it), and error
 func (u *Uploader) UploadFile(
-	path, mimeType string,
+	path, mime string,
 	permanode bool,
 ) (content, perma blob.Ref, err error) {
 	direct := u.StatReceiver != nil
@@ -193,7 +193,7 @@ func (u *Uploader) UploadFile(
 		return u.UploadFileExt(path, permanode)
 	}
 
-	if content, err = u.UploadFileMIME(path, mimeType); !permanode || err != nil {
+	if content, err = u.UploadFileMIME(path, mime); !permanode || err != nil {
 		return content, perma, err
 	}
 	pbRes, err := u.Client.UploadPlannedPermanode(content.String(), time.Now())
@@ -212,7 +212,7 @@ func (u *Uploader) UploadFile(
 //
 // This is lazy, so it will NOT return an error if the permanode/attrs can't be created.
 func (u *Uploader) UploadFileLazyAttr(
-	path, mimeType string,
+	path, mime string,
 	attrs map[string]string,
 ) (content, perma blob.Ref, err error) {
 	direct := u.StatReceiver != nil
@@ -227,14 +227,8 @@ func (u *Uploader) UploadFileLazyAttr(
 		return u.UploadFileExtLazyAttr(path, attrs)
 	}
 
-	filteredAttrs := make(map[string]string, len(attrs)+1)
-	for k, v := range attrs {
-		if strings.HasPrefix(k, "camli") {
-			continue
-		}
-		filteredAttrs[k] = v
-	}
-	if content, err = u.UploadFileMIME(path, mimeType); len(filteredAttrs) == 0 || err != nil {
+	filteredAttrs := filterAttrs("camli", attrs)
+	if content, err = u.UploadFileMIME(path, mime); len(filteredAttrs) == 0 || err != nil {
 		return content, perma, err
 	}
 
@@ -243,6 +237,37 @@ func (u *Uploader) UploadFileLazyAttr(
 		Log("msg", "NewPermanode", "attrs", filteredAttrs, "error", err)
 	}
 	return content, perma, nil
+}
+
+// UploadReaderLazyAttr uploads the contents of the reader as a file,
+// returns the content ref, and the permanode ref iff attrs is not empty.
+// It also sets the attributes on the permanode - but only those without "camli" prefix!
+//
+// This is lazy, so it will NOT return an error if the permanode/attrs can't be created.
+func (u *Uploader) UploadReaderInfoLazyAttr(
+	fi os.FileInfo, mime string, r io.Reader,
+	attrs map[string]string,
+) (content, perma blob.Ref, err error) {
+	filteredAttrs := filterAttrs("camli", attrs)
+	if content, err = u.FromReaderInfo(fi, mime, r); err != nil || len(filteredAttrs) == 0 {
+		return content, perma, err
+	}
+	filteredAttrs["camliContent"] = content.String()
+	if perma, err = u.NewPermanode(filteredAttrs); err != nil {
+		Log("msg", "NewPermanode", "attrs", filteredAttrs, "error", err)
+	}
+	return content, perma, nil
+}
+
+func filterAttrs(skipPrefix string, attrs map[string]string) map[string]string {
+	filteredAttrs := make(map[string]string, len(attrs)+1)
+	for k, v := range attrs {
+		if strings.HasPrefix(k, skipPrefix) {
+			continue
+		}
+		filteredAttrs[k] = v
+	}
+	return filteredAttrs
 }
 
 // NewPermanode returns a new random permanode and sets the given attrs on it.
@@ -361,10 +386,11 @@ func (u *Uploader) UploadFileExt(path string, permanode bool) (content, perma bl
 // returns the content ref, the permanode ref (iff you added attributes).
 func (u *Uploader) UploadFileExtLazyAttr(path string, attrs map[string]string) (content, perma blob.Ref, err error) {
 	Log("msg", "UploadFileExtLazyAttr", "path", path, "attrs", attrs)
-	content, perma, err = u.UploadFileExt(path, len(attrs) > 0)
+	filteredAttrs := filterAttrs("camli", attrs)
+	content, perma, err = u.UploadFileExt(path, len(filteredAttrs) > 0)
 	if perma.Valid() {
-		if err := u.SetPermanodeAttrs(perma, attrs); err != nil {
-			Log("msg", "SetPermanodeAttrs", "perma", perma.String(), "attrs", attrs, "error", err)
+		if err := u.SetPermanodeAttrs(perma, filteredAttrs); err != nil {
+			Log("msg", "SetPermanodeAttrs", "perma", perma.String(), "attrs", filteredAttrs, "error", err)
 		}
 	}
 	return content, perma, err
