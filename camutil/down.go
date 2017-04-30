@@ -207,8 +207,8 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 			b, err = blob.FromFetcher(down.Fetcher, br)
 			if err == nil {
 				rc = b.Open()
-			} else if err == os.ErrNotExist {
-				return nil, err
+			} else if errors.Cause(err) == os.ErrNotExist {
+				return nil, errors.Wrapf(err, "%v", br)
 			} else {
 				Log("error", err)
 			}
@@ -264,12 +264,12 @@ func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) e
 	return nil
 }
 
-func fetch(src blob.Fetcher, br blob.Ref) (r io.ReadCloser, err error) {
-	r, _, err = src.Fetch(br)
+func fetch(src blob.Fetcher, br blob.Ref) (io.ReadCloser, error) {
+	r, _, err := src.Fetch(br)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetch %s", br)
 	}
-	return r, err
+	return r, nil
 }
 
 var _ = io.Closer(multiCloser{})

@@ -21,7 +21,6 @@ package camutil
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -41,7 +40,7 @@ const sniffSize = 900 * 1024
 func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	rc, err := fetch(src, br)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "smartFetch")
 	}
 	var onceClose sync.Once
 	closeRc := func() { onceClose.Do(func() { rc.Close() }) }
@@ -50,7 +49,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 	sniffer := index.NewBlobSniffer(br)
 	_, err = io.CopyN(sniffer, rc, sniffSize)
 	if err != nil && err != io.EOF {
-		return err
+		return errors.Wrap(err, "sniff")
 	}
 
 	sniffer.Parse()
@@ -70,7 +69,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		body, _ := sniffer.Body()
 		r := io.MultiReader(bytes.NewReader(body), rc)
 		_, err = io.Copy(f, r)
-		return err
+		return errors.Wrap(err, "read")
 	}
 	closeRc()
 
@@ -81,14 +80,14 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 			Log("msg", "Fetching directory", "blob", br, "destination", dir)
 		}
 		if err := os.MkdirAll(dir, b.FileMode()); err != nil {
-			return err
+			return errors.Wrap(err, "mkdirall "+dir)
 		}
 		if err := setFileMeta(dir, b); err != nil {
 			Log("msg", "setFileMeta", "error", err)
 		}
 		entries, ok := b.DirectoryEntries()
 		if !ok {
-			return errors.New(fmt.Sprintf("bad entries blobref in dir %v", b.BlobRef()))
+			return errors.Errorf("bad entries blobref in dir %v", b.BlobRef())
 		}
 		return smartFetch(src, dir, entries)
 	case "static-set":

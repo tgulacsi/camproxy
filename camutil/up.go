@@ -108,7 +108,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		server:        server,
 		args:          make([]string, 1, 2),
 		opts:          make([]string, 0, 3),
-		gate:          syncutil.NewGate(8),
+		gate:          syncutil.NewGate(32),
 		skipHaveCache: skipHaveCache,
 		Client:        c,
 		StatReceiver:  c,
