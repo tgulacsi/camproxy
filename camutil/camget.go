@@ -21,24 +21,26 @@ package camutil
 
 import (
 	"bytes"
+	"context"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 
-	"camlistore.org/pkg/blob"
-	"camlistore.org/pkg/index"
-	"camlistore.org/pkg/osutil"
-	"camlistore.org/pkg/schema"
 	"github.com/pkg/errors"
+	"perkeep.org/pkg/blob"
+	"perkeep.org/pkg/index"
+	"perkeep.org/pkg/schema"
 )
 
 // A little less than the sniffer will take, so we don't truncate.
 const sniffSize = 900 * 1024
 
 // smartFetch the things that blobs point to, not just blobs.
-func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
-	rc, err := fetch(src, br)
+func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref) error {
+	rc, err := fetch(ctx, src, br)
 	if err != nil {
 		return errors.Wrap(err, "smartFetch")
 	}
@@ -89,7 +91,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		if !ok {
 			return errors.Errorf("bad entries blobref in dir %v", b.BlobRef())
 		}
-		return smartFetch(src, dir, entries)
+		return smartFetch(ctx, src, dir, entries)
 	case "static-set":
 		if Verbose {
 			Log("msg", "Fetching directory entries", "blob", br, "destination", targ)
@@ -107,7 +109,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		for i := 0; i < numWorkers; i++ {
 			go func() {
 				for wi := range workc {
-					wi.errc <- smartFetch(src, targ, wi.br)
+					wi.errc <- smartFetch(ctx, src, targ, wi.br)
 				}
 			}()
 		}
@@ -124,7 +126,7 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 		}
 		return nil
 	case "file":
-		fr, err := schema.NewFileReader(src, br)
+		fr, err := schema.NewFileReader(ctx, src, br)
 		if err != nil {
 			return errors.Wrap(err, "NewFileReader")
 		}
@@ -208,8 +210,8 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 			return nil
 		}
 
-		err = osutil.Mkfifo(name, 0600)
-		if err == osutil.ErrNotSupported {
+		err = syscall.Mkfifo(name, 0600)
+		if err == ErrNotSupported {
 			Log("msg", "Skipping FIFO "+name+": Unsupported filetype")
 			return nil
 		}
@@ -243,8 +245,8 @@ func smartFetch(src blob.Fetcher, targ string, br blob.Ref) error {
 			return nil
 		}
 
-		err = osutil.Mksocket(name)
-		if err == osutil.ErrNotSupported {
+		err = mksocket(name)
+		if err == ErrNotSupported {
 			Log("msg", "Skipping socket "+name+": Unsupported filetype")
 			return nil
 		}
@@ -277,5 +279,28 @@ func setFileMeta(name string, blob *schema.Blob) error {
 			return err
 		}
 	}
+	return nil
+}
+
+var ErrNotSupported = errors.New("operation not supported")
+
+func mksocket(path string) error {
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	tmp := filepath.Join(dir, "."+base)
+	l, err := net.ListenUnix("unix", &net.UnixAddr{Name: tmp, Net: "unix"})
+	if err != nil {
+		return err
+	}
+
+	err = os.Rename(tmp, path)
+	if err != nil {
+		l.Close()
+		os.Remove(tmp) // Ignore error
+		return err
+	}
+
+	l.Close()
+
 	return nil
 }

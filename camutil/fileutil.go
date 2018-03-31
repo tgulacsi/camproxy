@@ -23,16 +23,6 @@ import (
 	"os"
 )
 
-func linkAlreadyExists(err error) bool {
-	if os.IsExist(err) {
-		return true
-	}
-	if le, ok := err.(*os.LinkError); ok && os.IsExist(le.Err) {
-		return true
-	}
-	return false
-}
-
 // CopyFile is used by Windows (receive_windows.go) and when a posix filesystem doesn't
 // support a link operation (e.g. Linux with an exfat external USB disk).
 func CopyFile(src, dst string) error {

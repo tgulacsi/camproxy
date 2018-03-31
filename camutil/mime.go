@@ -20,12 +20,11 @@ import (
 	"bytes"
 	"io"
 
-	"camlistore.org/pkg/lru"
-	"camlistore.org/pkg/magic"
-	"camlistore.org/pkg/sorted"
-	"camlistore.org/pkg/sorted/kvfile"
-
 	"bitbucket.org/taruti/mimemagic"
+	"github.com/golang/groupcache/lru"
+	"gopkg.in/h2non/filetype.v1"
+	"perkeep.org/pkg/sorted"
+	"perkeep.org/pkg/sorted/kvfile"
 )
 
 // DefaultMaxMemMimeCacheSize is the maximum size of in-memory mime cache
@@ -41,14 +40,12 @@ func MIMETypeFromReader(r io.Reader) (mime string, reader io.Reader) {
 	}
 	var buf bytes.Buffer
 	_, err := io.Copy(&buf, io.LimitReader(r, 1024))
-	mime = magic.MIMEType(buf.Bytes())
-	if mime == "" || mime == "application/octet-stream" {
-		mime = mimemagic.Match(mime, buf.Bytes())
-	}
+	mt, _ := filetype.Match(buf.Bytes())
+	mime = mt.MIME.Type + "/" + mt.MIME.Subtype
 	if err != nil {
-		return mime, io.MultiReader(&buf, errReader{err})
+		return mime, io.MultiReader(bytes.NewReader(buf.Bytes()), errReader{err})
 	}
-	return mime, io.MultiReader(&buf, r)
+	return mime, io.MultiReader(bytes.NewReader(buf.Bytes()), r)
 }
 
 // MimeCache is the in-memory (LRU) and disk-based (kv) cache of mime types

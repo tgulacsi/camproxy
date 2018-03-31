@@ -34,15 +34,15 @@ import (
 	"strings"
 	"time"
 
-	"camlistore.org/pkg/blob"
-	"camlistore.org/pkg/client"
+	"perkeep.org/pkg/blob"
+	"perkeep.org/pkg/client"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
 	"github.com/tgulacsi/camproxy/camutil"
 )
 
-var logger = log.NewContext(log.NewLogfmtLogger(os.Stderr))
+var logger = log.NewLogfmtLogger(os.Stderr)
 
 var (
 	flagVerbose       = flag.Bool("v", false, "verbose logging")
@@ -65,7 +65,7 @@ func main() {
 	flag.Parse()
 
 	if *flagVerbose {
-		camutil.Log = logger.With("lib", "camutil").Log
+		camutil.Log = log.With(logger, "lib", "camutil").Log
 	}
 
 	server = client.ExplicitServer()
@@ -141,7 +141,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 				500)
 			return
 		}
-		rc, err := d.Start(content, items...)
+		rc, err := d.Start(r.Context(), content, items...)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("download error: %v", err), 500)
 			return
@@ -202,9 +202,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 		switch ct {
 		case "multipart/form", "multipart/form-data", "application/x-www-form-urlencoded":
-			mr, err := r.MultipartReader()
-			if err != nil {
-				http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", err), 400)
+			mr, mrErr := r.MultipartReader()
+			if mrErr != nil {
+				http.Error(w, fmt.Sprintf("error parsing request body as multipart/form: %s", mrErr), 400)
 				return
 			}
 			qmtime := values.Get("mtime")
@@ -252,9 +252,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no files in request", 400)
 			return
 		case 1:
-			content, perma, err = u.UploadFileLazyAttr(filenames[0], mimetypes[0], attrs)
+			content, perma, err = u.UploadFileLazyAttr(r.Context(), filenames[0], mimetypes[0], attrs)
 		default:
-			content, perma, err = u.UploadFileLazyAttr(dn, "", attrs)
+			content, perma, err = u.UploadFileLazyAttr(r.Context(), dn, "", attrs)
 		}
 		if err != nil {
 			http.Error(w, fmt.Sprintf("error uploading %q: %s", filenames, err), 500)
@@ -341,12 +341,13 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 
 	var fn string
 	var lastmod time.Time
-	for part, err := mr.NextPart(); err == nil; part, err = mr.NextPart() {
+	var part *multipart.Part
+	for part, err = mr.NextPart(); err == nil; part, err = mr.NextPart() {
 		filename := part.FileName()
 		if filename == "" {
 			if part.FormName() == "mtime" {
 				b := bytes.NewBuffer(make([]byte, 23))
-				if _, err := io.CopyN(b, part, 23); err == nil || err == io.EOF {
+				if _, err = io.CopyN(b, part, 23); err == nil || err == io.EOF {
 					err = nil
 					qmtime = b.String()
 				}

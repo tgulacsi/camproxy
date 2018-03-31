@@ -18,21 +18,23 @@ package camutil
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 
-	"camlistore.org/pkg/blob"
-	"camlistore.org/pkg/blobserver/localdisk"
-	"camlistore.org/pkg/cacher"
-	"camlistore.org/pkg/client"
-	"camlistore.org/pkg/schema"
 	"github.com/pkg/errors"
+	"perkeep.org/pkg/blob"
+	"perkeep.org/pkg/blobserver/localdisk"
+	"perkeep.org/pkg/cacher"
+	"perkeep.org/pkg/client"
+	"perkeep.org/pkg/schema"
 )
 
 var Log = func(keyvals ...interface{}) error { return nil }
@@ -67,9 +69,16 @@ func NewClient(server string) (*client.Client, error) {
 		if err != nil {
 			return nil, err
 		}
-		c = client.NewStorageClient(bs)
+		c, err = client.New(client.OptionUseStorageClient(bs))
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		c = client.New(server, client.OptionInsecure(true))
+		var err error
+		c, err = client.New(client.OptionServer(server), client.OptionInsecure(true))
+		if err != nil {
+			return nil, err
+		}
 		if err := c.SetupAuth(); err != nil {
 			return nil, err
 		}
@@ -189,7 +198,7 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 
 // Start starts the downloads of the blobrefs.
 // Just the JSON schema if contents is false, else the content of the blob.
-func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, error) {
+func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.Ref) (io.ReadCloser, error) {
 	readers := make([]io.Reader, 0, len(items))
 	closers := make([]io.Closer, 0, len(items))
 	var (
@@ -198,15 +207,20 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 	)
 	for _, br := range items {
 		if contents {
-			rc, err = schema.NewFileReader(down.Fetcher, br)
+			rc, err = schema.NewFileReader(ctx, down.Fetcher, br)
 			if err == nil {
 				rc.(*schema.FileReader).LoadAllChunks()
 			}
 		} else {
 			var b *blob.Blob
-			b, err = blob.FromFetcher(down.Fetcher, br)
+			b, err = blob.FromFetcher(ctx, down.Fetcher, br)
 			if err == nil {
-				rc = b.Open()
+				var r io.Reader
+				r, err = b.ReadAll(ctx)
+				rc = struct {
+					io.Reader
+					io.Closer
+				}{r, ioutil.NopCloser(nil)}
 			} else if errors.Cause(err) == os.ErrNotExist {
 				return nil, errors.Wrapf(err, "%v", br)
 			} else {
@@ -254,9 +268,9 @@ func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, 
 }
 
 // Save saves contents of the blobs into destDir as files
-func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) error {
+func (down *Downloader) Save(ctx context.Context, destDir string, contents bool, items ...blob.Ref) error {
 	for _, br := range items {
-		if err := smartFetch(down.Fetcher, destDir, br); err != nil {
+		if err := smartFetch(ctx, down.Fetcher, destDir, br); err != nil {
 			Log("msg", "Save", "error", err)
 			return err
 		}
@@ -264,8 +278,8 @@ func (down *Downloader) Save(destDir string, contents bool, items ...blob.Ref) e
 	return nil
 }
 
-func fetch(src blob.Fetcher, br blob.Ref) (io.ReadCloser, error) {
-	r, _, err := src.Fetch(br)
+func fetch(ctx context.Context, src blob.Fetcher, br blob.Ref) (io.ReadCloser, error) {
+	r, _, err := src.Fetch(ctx, br)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetch %s", br)
 	}
