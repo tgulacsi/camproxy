@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"io"
 
-	"bitbucket.org/taruti/mimemagic"
 	"github.com/golang/groupcache/lru"
 	"gopkg.in/h2non/filetype.v1"
 	"perkeep.org/pkg/sorted"
@@ -105,8 +104,9 @@ func (mc *MimeCache) Set(key, mime string) {
 }
 
 // MatchMime checks mime from the first 1024 bytes
-func MatchMime(guessMime string, data []byte) string {
-	return mimemagic.Match(guessMime, data)
+func MatchMime(_ string, data []byte) string {
+	mt, _ := filetype.Match(data)
+	return mt.MIME.Type + "/" + mt.MIME.Subtype
 }
 
 type errReader struct {
