@@ -18,6 +18,7 @@ package camutil
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
@@ -189,7 +190,7 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 
 // Start starts the downloads of the blobrefs.
 // Just the JSON schema if contents is false, else the content of the blob.
-func (down *Downloader) Start(contents bool, items ...blob.Ref) (io.ReadCloser, error) {
+func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.Ref) (io.ReadCloser, error) {
 	readers := make([]io.Reader, 0, len(items))
 	closers := make([]io.Closer, 0, len(items))
 	var (

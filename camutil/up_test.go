@@ -1,6 +1,7 @@
 package camutil
 
 import (
+	"context"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -16,12 +17,14 @@ func TestNewPermanode(t *testing.T) {
 
 	u := NewUploader("file://"+tempDir, true, true)
 	defer u.Close()
-	contentKey, err := u.FromReader("test.txt", strings.NewReader("nothing"))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	contentKey, err := u.FromReader(ctx, "test.txt", strings.NewReader("nothing"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("contentKey=%v", contentKey)
-	permaKey, err := u.NewPermanode(map[string]string{"an attr": "ibute"})
+	permaKey, err := u.NewPermanode(ctx, map[string]string{"an attr": "ibute"})
 	if err != nil {
 		t.Error(err)
 	}
