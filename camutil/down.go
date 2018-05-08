@@ -241,15 +241,15 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 			args = append(args, "-insecure=true")
 		}
 		args = append(args, br.String())
-		c := exec.Command("camget", args...)
+		c := exec.Command(cmdPkGet, args...)
 		var errBuf bytes.Buffer
 		c.Stderr = &errBuf
 		if rc, err = c.StdoutPipe(); err != nil {
-			return nil, errors.Wrapf(err, "create stdout pipe for camget %q: %s", args, errBuf.Bytes())
+			return nil, errors.Wrapf(err, "create stdout pipe for %s %q: %s", cmdPkGet, args, errBuf.Bytes())
 		}
-		Log("msg", "calling camget", "args", args)
+		Log("msg", "calling "+cmdPkGet, "args", args)
 		if err = c.Run(); err != nil {
-			return nil, errors.Wrapf(err, "call camget %q: %s", args, errBuf.Bytes())
+			return nil, errors.Wrapf(err, "call %s %q: %s", cmdPkGet, args, errBuf.Bytes())
 		}
 		readers = append(readers, rc)
 		closers = append(closers, rc)

@@ -114,7 +114,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		Client:        c,
 		StatReceiver:  c,
 	}
-	u.args[0] = "camput"
+	u.args[0] = cmdPkPut
 	if server != "" {
 		u.args = append(u.args, "-server="+server)
 	}
@@ -426,8 +426,8 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			errbuf.Reset()
 			time.Sleep(time.Duration(i) * time.Second)
 		}
-		Log("msg", "camput", "args", args)
-		c := exec.Command("camput", args[0:]...)
+		Log("msg", cmdPkPut, "args", args)
+		c := exec.Command(cmdPkPut, args[0:]...)
 		c.Dir = dir
 		c.Env = u.env
 		c.Stderr = &errbuf
@@ -441,7 +441,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			u.mtx.Unlock()
 		}
 		if err != nil {
-			lastErr = errors.Wrapf(err, "call camput %q: %s", args, errbuf.Bytes())
+			lastErr = errors.Wrapf(err, "call %s %q: %s", cmdPkPut, args, errbuf.Bytes())
 			continue
 		}
 		// the last line is the permanode ref, the first is the content
@@ -557,6 +557,16 @@ func newDummySigner() *schema.Signer {
 		return nil
 	}
 	return signer
+}
+
+var cmdPkPut = "pk-put"
+
+func init() {
+	if _, err := exec.LookPath("pk-put"); err != nil {
+		if _, err = exec.LookPath("camput"); err == nil {
+			cmdPkPut = "camput"
+		}
+	}
 }
 
 // vim: fileencoding=utf-8:

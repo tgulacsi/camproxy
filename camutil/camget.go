@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"syscall"
@@ -304,3 +305,15 @@ func mksocket(path string) error {
 
 	return nil
 }
+
+var cmdPkGet = "pk-get"
+
+func init() {
+	if _, err := exec.LookPath("pk-get"); err != nil {
+		if _, err = exec.LookPath("camget"); err == nil {
+			cmdPkGet = "camget"
+		}
+	}
+}
+
+// vim: fileencoding=utf-8:

@@ -124,10 +124,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		content := values.Get("raw") != "1"
-		okMime, nm := "", ""
-		if !content {
-			okMime = "application/json"
-		} else {
+		okMime, nm := "application/json", ""
+		if content {
 			okMime = values.Get("mimeType")
 			if okMime == "" && 1 == len(items) {
 				nm = camutil.RefToBase64(items[0])
@@ -348,7 +346,6 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			if part.FormName() == "mtime" {
 				b := bytes.NewBuffer(make([]byte, 23))
 				if _, err = io.CopyN(b, part, 23); err == nil || err == io.EOF {
-					err = nil
 					qmtime = b.String()
 				}
 			}
