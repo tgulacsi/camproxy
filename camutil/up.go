@@ -288,7 +288,7 @@ func (u *Uploader) NewPermanode(ctx context.Context, attrs map[string]string) (b
 		}
 		return pRes.BlobRef, err
 	}
-	if u.Signer != nil {
+	if u.Signer != nil { //nolint:govet
 		signed, err := schema.NewUnsignedPermanode().Sign(ctx, u.Signer)
 		if err != nil {
 			Log("msg", "Sign", "signer", u.Signer, "error", err)
