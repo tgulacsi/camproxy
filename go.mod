@@ -9,3 +9,5 @@ require (
 	github.com/tgulacsi/camproxy/camutil v0.0.0-20180826070011-90374f165122
 	perkeep.org v0.0.0-20180824152313-dd2d82c2500c
 )
+
+replace github.com/tgulacsi/camproxy/camutil v0.0.0-20180826070011-90374f165122 => ./camutil
