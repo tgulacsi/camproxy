@@ -159,6 +159,9 @@ func (u *Uploader) Close() error {
 
 // FromReader uploads the contents of the io.Reader.
 func (u *Uploader) FromReader(ctx context.Context, fileName string, r io.Reader) (blob.Ref, error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	u.gate.Start()
 	defer u.gate.Done()
 	return schema.WriteFileFromReader(ctx, u.StatReceiver, filepath.Base(fileName), r)
@@ -168,6 +171,9 @@ func (u *Uploader) FromReader(ctx context.Context, fileName string, r io.Reader)
 // Creation time (unixCtime) is capped at modification time (unixMtime), and
 // a "mimeType" field is set, if mime is not empty.
 func (u *Uploader) FromReaderInfo(ctx context.Context, fi os.FileInfo, mime string, r io.Reader) (blob.Ref, error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
 	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
 	file = file.SetType("file")
@@ -183,6 +189,9 @@ func (u *Uploader) UploadFile(
 	path, mime string,
 	permanode bool,
 ) (content, perma blob.Ref, err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	direct := u.StatReceiver != nil
 	if direct {
 		fi, err := os.Stat(path)
@@ -218,6 +227,9 @@ func (u *Uploader) UploadFileLazyAttr(
 	path, mime string,
 	attrs map[string]string,
 ) (content, perma blob.Ref, err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	direct := u.StatReceiver != nil
 	if direct {
 		fi, err := os.Stat(path)
@@ -252,6 +264,9 @@ func (u *Uploader) UploadReaderInfoLazyAttr(
 	fi os.FileInfo, mime string, r io.Reader,
 	attrs map[string]string,
 ) (content, perma blob.Ref, err error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	filteredAttrs := filterAttrs("camli", attrs)
 	if content, err = u.FromReaderInfo(ctx, fi, mime, r); err != nil || len(filteredAttrs) == 0 {
 		return content, perma, err
@@ -277,6 +292,9 @@ func filterAttrs(skipPrefix string, attrs map[string]string) map[string]string {
 // NewPermanode returns a new random permanode and sets the given attrs on it.
 // Returns the permanode, and the error.
 func (u *Uploader) NewPermanode(ctx context.Context, attrs map[string]string) (blob.Ref, error) {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode(ctx)
 		if err != nil {
