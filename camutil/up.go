@@ -160,7 +160,7 @@ func (u *Uploader) Close() error {
 // FromReader uploads the contents of the io.Reader.
 func (u *Uploader) FromReader(ctx context.Context, fileName string, r io.Reader) (blob.Ref, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return blob.Ref{}, err
 	}
 	u.gate.Start()
 	defer u.gate.Done()
@@ -172,7 +172,7 @@ func (u *Uploader) FromReader(ctx context.Context, fileName string, r io.Reader)
 // a "mimeType" field is set, if mime is not empty.
 func (u *Uploader) FromReaderInfo(ctx context.Context, fi os.FileInfo, mime string, r io.Reader) (blob.Ref, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return blob.Ref{}, err
 	}
 	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
 	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
@@ -189,8 +189,8 @@ func (u *Uploader) UploadFile(
 	path, mime string,
 	permanode bool,
 ) (content, perma blob.Ref, err error) {
-	if err := ctx.Err(); err != nil {
-		return err
+	if err = ctx.Err(); err != nil {
+		return
 	}
 	direct := u.StatReceiver != nil
 	if direct {
@@ -227,8 +227,8 @@ func (u *Uploader) UploadFileLazyAttr(
 	path, mime string,
 	attrs map[string]string,
 ) (content, perma blob.Ref, err error) {
-	if err := ctx.Err(); err != nil {
-		return err
+	if err = ctx.Err(); err != nil {
+		return
 	}
 	direct := u.StatReceiver != nil
 	if direct {
@@ -264,8 +264,8 @@ func (u *Uploader) UploadReaderInfoLazyAttr(
 	fi os.FileInfo, mime string, r io.Reader,
 	attrs map[string]string,
 ) (content, perma blob.Ref, err error) {
-	if err := ctx.Err(); err != nil {
-		return err
+	if err = ctx.Err(); err != nil {
+		return
 	}
 	filteredAttrs := filterAttrs("camli", attrs)
 	if content, err = u.FromReaderInfo(ctx, fi, mime, r); err != nil || len(filteredAttrs) == 0 {
@@ -293,7 +293,7 @@ func filterAttrs(skipPrefix string, attrs map[string]string) map[string]string {
 // Returns the permanode, and the error.
 func (u *Uploader) NewPermanode(ctx context.Context, attrs map[string]string) (blob.Ref, error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return blob.Ref{}, err
 	}
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode(ctx)
@@ -515,66 +515,6 @@ func RefToBase64(br blob.Ref) string {
 	}
 	hn := br.HashName()
 	return hn + "-" + base64.URLEncoding.EncodeToString(data[len(hn)+1:])
-}
-
-func newDummySigner() *schema.Signer {
-	var privateKeySource *openpgp.Entity
-	for _, fn := range []string{
-		"$HOME/.config/camlistore/identity-secring.gpg",
-		"$HOME/.gnupg/secring.gpg",
-	} {
-		fh, err := os.Open(os.ExpandEnv(fn))
-		if err != nil {
-			Log("msg", "open", "file", fn, "error", err)
-			continue
-		}
-		el, err := openpgp.ReadKeyRing(fh)
-		fh.Close()
-		if err != nil {
-			Log("msg", "ReadKeyRing", "file", fh.Name(), "error", err)
-			continue
-		}
-		for _, e := range el {
-			if e.PrivateKey == nil {
-				continue
-			}
-			privateKeySource = e
-			break
-		}
-		if privateKeySource != nil {
-			break
-		}
-	}
-	if privateKeySource == nil {
-		var err error
-		if privateKeySource, err = openpgp.NewEntity(
-			"camutil", "test", "camutil@camlistore.org", nil,
-		); err != nil {
-			Log("msg", "openpgp.NewEntity", "error", err)
-			return nil
-		}
-	}
-	var buf bytes.Buffer
-	hsh := blob.RefFromString("").Hash()
-	w, err := armor.Encode(io.MultiWriter(&buf, hsh), "PGP PUBLIC KEY BLOCK", nil)
-	if err != nil {
-		Log("msg", "armor", "error", err)
-		return nil
-	}
-	if err = privateKeySource.PrimaryKey.Serialize(w); err != nil {
-		Log("msg", "serialize", "error", err)
-	}
-	_ = w.Close()
-
-	pubKeyRef := blob.RefFromHash(hsh)
-	armoredPubKey := bytes.NewReader(buf.Bytes())
-
-	signer, err := schema.NewSigner(pubKeyRef, armoredPubKey, privateKeySource)
-	if err != nil {
-		Log("msg", "newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource, "error", err)
-		return nil
-	}
-	return signer
 }
 
 var cmdPkPut = "pk-put"
