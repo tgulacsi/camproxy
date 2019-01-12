@@ -517,6 +517,66 @@ func RefToBase64(br blob.Ref) string {
 	return hn + "-" + base64.URLEncoding.EncodeToString(data[len(hn)+1:])
 }
 
+func newDummySigner() *schema.Signer { //nolint:deadcode
+	var privateKeySource *openpgp.Entity
+	for _, fn := range []string{
+		"$HOME/.config/camlistore/identity-secring.gpg",
+		"$HOME/.gnupg/secring.gpg",
+	} {
+		fh, err := os.Open(os.ExpandEnv(fn))
+		if err != nil {
+			Log("msg", "open", "file", fn, "error", err)
+			continue
+		}
+		el, err := openpgp.ReadKeyRing(fh)
+		fh.Close()
+		if err != nil {
+			Log("msg", "ReadKeyRing", "file", fh.Name(), "error", err)
+			continue
+		}
+		for _, e := range el {
+			if e.PrivateKey == nil {
+				continue
+			}
+			privateKeySource = e
+			break
+		}
+		if privateKeySource != nil {
+			break
+		}
+	}
+	if privateKeySource == nil {
+		var err error
+		if privateKeySource, err = openpgp.NewEntity(
+			"camutil", "test", "camutil@camlistore.org", nil,
+		); err != nil {
+			Log("msg", "openpgp.NewEntity", "error", err)
+			return nil
+		}
+	}
+	var buf bytes.Buffer
+	hsh := blob.RefFromString("").Hash()
+	w, err := armor.Encode(io.MultiWriter(&buf, hsh), "PGP PUBLIC KEY BLOCK", nil)
+	if err != nil {
+		Log("msg", "armor", "error", err)
+		return nil
+	}
+	if err = privateKeySource.PrimaryKey.Serialize(w); err != nil {
+		Log("msg", "serialize", "error", err)
+	}
+	_ = w.Close()
+
+	pubKeyRef := blob.RefFromHash(hsh)
+	armoredPubKey := bytes.NewReader(buf.Bytes())
+
+	signer, err := schema.NewSigner(pubKeyRef, armoredPubKey, privateKeySource)
+	if err != nil {
+		Log("msg", "newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource, "error", err)
+		return nil
+	}
+	return signer
+}
+
 var cmdPkPut = "pk-put"
 
 func init() {
