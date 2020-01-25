@@ -127,7 +127,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		okMime, nm := "application/json", ""
 		if content {
 			okMime = values.Get("mimeType")
-			if okMime == "" && 1 == len(items) {
+			if okMime == "" && len(items) == 1 {
 				nm = camutil.RefToBase64(items[0])
 				okMime = mimeCache.Get(nm)
 			}
@@ -287,7 +287,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(201)
 		w.Write(b.Bytes())
 	default:
-		http.Error(w, "Method must be GET/POST", 405)
+		http.Error(w, "Method must be GET/POST", http.StatusMethodNotAllowed)
 	}
 }
 
