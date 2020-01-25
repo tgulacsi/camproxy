@@ -53,6 +53,14 @@ func NewStorage(bs blobserver.Storage, maxItemCount, maxSize int64) *Storage {
 	if err != nil {
 		panic(err)
 	}
+	ch := make(chan blob.SizedRef)
+	go func() {
+		for x := range ch {
+			key := x.Ref.String()
+			ds.cache.Set(key, key, int64(x.Size))
+		}
+	}()
+	go ds.bs.EnumerateBlobs(context.Background(), ch, "", int(maxItemCount))
 	return ds
 }
 

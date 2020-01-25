@@ -9,6 +9,7 @@ require (
 	github.com/dgryski/go-tinylfu v0.0.0-20191017040740-1dcb832f704f
 	github.com/go-kit/kit v0.8.0
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
+	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef
 	github.com/pkg/errors v0.8.1
 	go4.org v0.0.0-20190313082347-94abd6928b1d
