@@ -203,10 +203,13 @@ func (sto Storage) ReceiveBlob(ctx context.Context, br blob.Ref, source io.Reade
 			return txn.Set(key, b)
 		})
 }
+func BlobRefBytes(prefix string, br blob.Ref) []byte {
+	b, _ := br.MarshalBinary()
+	return append(append(make([]byte, 0, len(prefix)+len(b)), prefix...), b...)
+}
 
 func (sto Storage) blobRefBytes(br blob.Ref) []byte {
-	b, _ := br.MarshalBinary()
-	return append(append(make([]byte, 0, len(sto.prefix)+len(b)), sto.prefix...), b...)
+	return BlobRefBytes(sto.prefix, br)
 }
 
 var _ = blobserver.ShutdownStorage((*Storage)(nil))

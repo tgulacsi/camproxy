@@ -29,8 +29,10 @@ import (
 	badgerdb "github.com/dgraph-io/badger/v2"
 	"github.com/dgraph-io/ristretto"
 	"github.com/tgulacsi/camproxy/blobserver/badger"
+	"github.com/tgulacsi/camproxy/blobserver/trace"
 
 	"perkeep.org/pkg/blob"
+	"perkeep.org/pkg/blobserver"
 	"perkeep.org/pkg/schema"
 )
 
@@ -68,29 +70,80 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 			return nil, err
 		}
 	}
-	var ctx context.Context
-	ctx, pc.cancel = context.WithCancel(context.Background())
-	go pc.db.Subscribe(ctx, pc.onDBEvent, []byte(valuePrefix))
-	pc.sto = badger.NewManaged(pc.db, valuePrefix)
-	return pc, nil
+
+	pc.sto = &trace.Storage{
+		Storage: badger.NewManaged(pc.db, valuePrefix),
+		OnFetch: func(blobs []blob.SizedRef, err error) {
+			if err != nil {
+				return
+			}
+			for _, br := range blobs {
+				k, _ := br.Ref.MarshalBinary()
+				//log.Println("GET", k)
+				pc.cache.Get(k)
+			}
+		},
+		OnReceive: func(blobs []blob.SizedRef, err error) {
+			if err != nil {
+				return
+			}
+			//log.Println("SET", blobs)
+			for _, br := range blobs {
+				k, _ := br.Ref.MarshalBinary()
+				pc.cache.Set(k, k, int64(br.Size))
+			}
+		},
+		OnRemove: func(blobs []blob.SizedRef, err error) {
+			if err != nil {
+				return
+			}
+			for _, br := range blobs {
+				k, _ := br.Ref.MarshalBinary()
+				//log.Println("DEL", k)
+				pc.cache.Del(k)
+			}
+		},
+	}
+
+	iOpts := badgerdb.DefaultIteratorOptions
+	iOpts.PrefetchValues, iOpts.PrefetchSize, iOpts.Prefix = true, 16, []byte(valuePrefix)
+	return pc, pc.db.View(func(txn *badgerdb.Txn) error {
+		it := txn.NewIterator(iOpts)
+		defer it.Close()
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			var ref blob.Ref
+			if err := ref.UnmarshalBinary(bytes.TrimPrefix(item.Key(), []byte(valuePrefix))); err != nil {
+				continue
+			}
+			if err := item.Value(func(val []byte) error {
+				k, _ := ref.MarshalBinary()
+				pc.cache.Set(k, k, int64(len(val)))
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 type PerCache struct {
-	db     *badgerdb.DB
-	cache  *ristretto.Cache
-	sto    badger.Storage
-	cancel func()
-	mu     sync.Mutex
+	db    *badgerdb.DB
+	cache *ristretto.Cache
+	sto   blobserver.Storage
+	mu    sync.Mutex
 }
 
 func (pc *PerCache) Close() error {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
-	pc.cancel()
 	pc.cache.Close()
 	firstErr := pc.db.Close()
-	if err := pc.sto.Close(); err != nil && firstErr == nil {
-		firstErr = err
+	if cl, ok := pc.sto.(blobserver.ShutdownStorage); ok {
+		if err := cl.Close(); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
 	return firstErr
 }
@@ -101,24 +154,10 @@ func (pc *PerCache) onCacheEvict(key uint64, value interface{}, cost int64) {
 	if !ok {
 		return
 	}
+	//log.Println("EVICT", v)
 	pc.db.Update(func(txn *badgerdb.Txn) error {
 		return txn.Delete(append(append(make([]byte, 0, len(valuePrefix)+len(v)), valuePrefix...), v...))
 	})
-}
-func (pc *PerCache) onDBEvent(kvs *badgerdb.KVList) error {
-	pc.mu.Lock()
-	defer pc.mu.Unlock()
-	for _, kv := range kvs.Kv {
-		if len(kv.Key) <= len(valuePrefix) {
-			continue
-		}
-		if len(kv.Value) == 0 {
-			pc.cache.Del(kv.Key)
-			continue
-		}
-		pc.cache.Set(bytes.TrimPrefix(kv.Key, []byte(valuePrefix)), kv.Key, int64(len(kv.Value)))
-	}
-	return nil
 }
 
 func (pc *PerCache) Get(ctx context.Context, nodeID string) (io.ReadCloser, error) {
