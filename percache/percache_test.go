@@ -17,9 +17,12 @@ limitations under the License.
 package percache_test
 
 import (
+	"bytes"
 	"context"
 	"io/ioutil"
+	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +36,7 @@ func TestCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.RemoveAll(dn)
-	pc, err := percache.New(dn)
+	pc, err := percache.New(dn, 10, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,6 +66,16 @@ func TestCache(t *testing.T) {
 		}
 		if string(b) != v {
 			t.Errorf("%q: got %q, wanted %q", k, string(b), v)
+		}
+	}
+
+	var a [4]byte
+	var b []byte
+	for i := 0; i < 1000; i++ {
+		_, _ = rand.Read(a[:])
+		b = append(b, a[:]...)
+		if err := pc.Put(ctx, strconv.Itoa(i), bytes.NewReader(b)); err != nil {
+			t.Errorf("Put: %d: %+v", i, err)
 		}
 	}
 }

@@ -5,6 +5,7 @@ go 1.14
 require (
 	github.com/abbot/go-http-auth v0.4.0
 	github.com/dgraph-io/badger/v2 v2.0.1
+	github.com/dgraph-io/ristretto v0.0.0-20191025175511-c1f00be0418e
 	github.com/go-kit/kit v0.8.0
 	github.com/go-logfmt/logfmt v0.4.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect

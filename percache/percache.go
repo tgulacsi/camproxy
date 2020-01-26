@@ -20,42 +20,105 @@ limitations under the License.
 package percache
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
+	"sync"
 
 	badgerdb "github.com/dgraph-io/badger/v2"
+	"github.com/dgraph-io/ristretto"
 	"github.com/tgulacsi/camproxy/blobserver/badger"
 
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/schema"
 )
 
-const prefix = ","
+const (
+	prefix      = ","
+	valuePrefix = "/"
 
-func New(root string) (*PerCache, error) {
-	db, err := badgerdb.Open(badgerdb.DefaultOptions(root))
+	DefaultMaxCount = 10_000
+	DefaultMaxSize  = 1 << 30
+)
+
+func New(root string, maxCount, maxSize int64) (*PerCache, error) {
+	if maxCount <= 0 {
+		maxCount = DefaultMaxCount
+	}
+	if maxSize <= 0 {
+		maxSize = DefaultMaxSize
+	}
+	pc := &PerCache{}
+	var err error
+	if pc.cache, err = ristretto.NewCache(&ristretto.Config{
+		NumCounters: maxCount * 10,
+		MaxCost:     maxSize,
+		BufferItems: 64,
+		OnEvict:     pc.onCacheEvict,
+	}); err != nil {
+		return nil, err
+	}
+	bOpts := badgerdb.DefaultOptions(root)
+	pc.db, err = badgerdb.Open(bOpts)
 	if err != nil {
 		os.RemoveAll(root)
 		os.MkdirAll(root, 0755)
-		if db, err = badgerdb.Open(badgerdb.DefaultOptions(root)); err != nil {
+		if pc.db, err = badgerdb.Open(bOpts); err != nil {
 			return nil, err
 		}
 	}
-	return &PerCache{db: db, sto: badger.NewManaged(db, "/")}, err
+	var ctx context.Context
+	ctx, pc.cancel = context.WithCancel(context.Background())
+	go pc.db.Subscribe(ctx, pc.onDBEvent, []byte(valuePrefix))
+	pc.sto = badger.NewManaged(pc.db, valuePrefix)
+	return pc, nil
 }
 
 type PerCache struct {
-	db  *badgerdb.DB
-	sto badger.Storage
+	db     *badgerdb.DB
+	cache  *ristretto.Cache
+	sto    badger.Storage
+	cancel func()
+	mu     sync.Mutex
 }
 
 func (pc *PerCache) Close() error {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	pc.cancel()
+	pc.cache.Close()
 	firstErr := pc.db.Close()
 	if err := pc.sto.Close(); err != nil && firstErr == nil {
 		firstErr = err
 	}
 	return firstErr
+}
+func (pc *PerCache) onCacheEvict(key uint64, value interface{}, cost int64) {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	v, ok := value.([]byte)
+	if !ok {
+		return
+	}
+	pc.db.Update(func(txn *badgerdb.Txn) error {
+		return txn.Delete(append(append(make([]byte, 0, len(valuePrefix)+len(v)), valuePrefix...), v...))
+	})
+}
+func (pc *PerCache) onDBEvent(kvs *badgerdb.KVList) error {
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
+	for _, kv := range kvs.Kv {
+		if len(kv.Key) <= len(valuePrefix) {
+			continue
+		}
+		if len(kv.Value) == 0 {
+			pc.cache.Del(kv.Key)
+			continue
+		}
+		pc.cache.Set(bytes.TrimPrefix(kv.Key, []byte(valuePrefix)), kv.Key, int64(len(kv.Value)))
+	}
+	return nil
 }
 
 func (pc *PerCache) Get(ctx context.Context, nodeID string) (io.ReadCloser, error) {
