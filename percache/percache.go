@@ -28,7 +28,6 @@ import (
 	"github.com/tgulacsi/camproxy/blobserver/badger"
 
 	"perkeep.org/pkg/blob"
-	"perkeep.org/pkg/client"
 	"perkeep.org/pkg/schema"
 )
 
@@ -43,14 +42,20 @@ func New(root string) (*PerCache, error) {
 			return nil, err
 		}
 	}
-	sto := badger.NewManaged(db, "/")
-	cl, err := client.New(client.OptionUseStorageClient(sto))
-	return &PerCache{db: db, client: cl}, err
+	return &PerCache{db: db, sto: badger.NewManaged(db, "/")}, err
 }
 
 type PerCache struct {
-	db     *badgerdb.DB
-	client *client.Client
+	db  *badgerdb.DB
+	sto badger.Storage
+}
+
+func (pc *PerCache) Close() error {
+	firstErr := pc.db.Close()
+	if err := pc.sto.Close(); err != nil && firstErr == nil {
+		firstErr = err
+	}
+	return firstErr
 }
 
 func (pc *PerCache) Get(ctx context.Context, nodeID string) (io.ReadCloser, error) {
@@ -66,7 +71,7 @@ func (pc *PerCache) Get(ctx context.Context, nodeID string) (io.ReadCloser, erro
 	}); err != nil {
 		return nil, err
 	}
-	fr, err := schema.NewFileReader(ctx, pc.client, br)
+	fr, err := schema.NewFileReader(ctx, pc.sto, br)
 	if err == nil {
 		fr.LoadAllChunks()
 	}
@@ -74,7 +79,7 @@ func (pc *PerCache) Get(ctx context.Context, nodeID string) (io.ReadCloser, erro
 }
 
 func (pc *PerCache) Put(ctx context.Context, nodeID string, data io.Reader) error {
-	br, err := pc.client.UploadFile(ctx, nodeID, data, nil)
+	br, err := schema.WriteFileFromReader(ctx, pc.sto, nodeID, data)
 	if err != nil {
 		return err
 	}
