@@ -27,6 +27,7 @@ require (
 	github.com/neelance/astrewrite v0.0.0-20160511093645-99348263ae86 // indirect
 	github.com/neelance/sourcemap v0.0.0-20151028013722-8c68805598ab // indirect
 	github.com/nf/cr2 v0.0.0-20180623103828-4699471a17ed // indirect
+	github.com/peterbourgon/ff/v3 v3.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/remyoudompheng/bigfft v0.0.0-20190728182440-6a916e37a237 // indirect
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd // indirect

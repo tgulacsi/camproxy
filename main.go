@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha1"
 	"encoding/base64"
 	"flag"
@@ -29,15 +30,18 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/client"
 
 	"github.com/go-kit/kit/log"
+	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/pkg/errors"
 	"github.com/tgulacsi/camproxy/camutil"
 )
@@ -59,44 +63,87 @@ var (
 )
 
 func main() {
+	if err := Main(); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR %+v", err)
+		os.Exit(1)
+	}
+}
+
+func Main() error {
 	Log := logger.Log
 
 	client.AddFlags() // add -server flag
-	flag.Parse()
+
+	serveCmd := ffcli.Command{Name: "serve", FlagSet: flag.CommandLine,
+		Exec: func(ctx context.Context, args []string) error {
+			server = client.ExplicitServer()
+			camutil.InsecureTLS = *flagInsecureTLS
+			camutil.SkipIrregular = *flagSkipIrregular
+			s := &http.Server{
+				Addr:           *flagListen,
+				Handler:        http.HandlerFunc(handle),
+				ReadTimeout:    300 * time.Second,
+				WriteTimeout:   300 * time.Second,
+				MaxHeaderBytes: 1 << 20,
+			}
+			if !*flagNoAuth {
+				camliAuth := os.Getenv("CAMLI_AUTH")
+				if camliAuth != "" {
+					s.Handler = camutil.SetupBasicAuthChecker(handle, camliAuth)
+				}
+			}
+			defer func() {
+				camutil.Close()
+			}()
+			mimeCache = camutil.NewMimeCache(filepath.Join(os.TempDir(),
+				"mimecache-"+os.Getenv("BRUNO_CUS")+"_"+os.Getenv("BRUNO_ENV")+".kv"),
+				0)
+			defer mimeCache.Close()
+			Log("msg", "Listening", "http", s.Addr, "camlistore", server)
+			return s.ListenAndServe()
+		 },
+	}
+	refCmd := ffcli.Command{Name: "ref",
+		Exec: func(ctx context.Context, args []string) error {
+			var ref string
+			if len(args) == 0 || args[0] == "" || args[0] == "-" {
+				b, err := ioutil.ReadAll(os.Stdin)
+				if err != nil {
+					return err
+				}
+				ref = string(b)
+			} else {
+				ref = args[0]
+			}
+			br, err := camutil.Base64ToRef(ref)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Println(br)
+			return err
+		},
+	}
+
+	flag.CommandLine = flag.NewFlagSet("camutil", flag.ContinueOnError)
+	app := ffcli.Command{Name: "camutil",
+		Exec:        func(ctx context.Context, args []string) error { 
+			return serveCmd.Exec(ctx, args)
+		},
+		Subcommands: []*ffcli.Command{&serveCmd, &refCmd},
+	}
+
+	if err := app.Parse(os.Args[1:]); err != nil {
+		return err
+	}
 
 	if *flagVerbose {
 		camutil.Log = log.With(logger, "lib", "camutil").Log
 	}
-
-	server = client.ExplicitServer()
 	camutil.Verbose = *flagVerbose
-	camutil.InsecureTLS = *flagInsecureTLS
-	camutil.SkipIrregular = *flagSkipIrregular
-	s := &http.Server{
-		Addr:           *flagListen,
-		Handler:        http.HandlerFunc(handle),
-		ReadTimeout:    300 * time.Second,
-		WriteTimeout:   300 * time.Second,
-		MaxHeaderBytes: 1 << 20,
-	}
-	if !*flagNoAuth {
-		camliAuth := os.Getenv("CAMLI_AUTH")
-		if camliAuth != "" {
-			s.Handler = camutil.SetupBasicAuthChecker(handle, camliAuth)
-		}
-	}
-	defer func() {
-		camutil.Close()
-	}()
-	mimeCache = camutil.NewMimeCache(filepath.Join(os.TempDir(),
-		"mimecache-"+os.Getenv("BRUNO_CUS")+"_"+os.Getenv("BRUNO_ENV")+".kv"),
-		0)
-	defer mimeCache.Close()
-	Log("msg", "Listening", "http", s.Addr, "camlistore", server)
-	if err := s.ListenAndServe(); err != nil {
-		Log("msg", "finish", "error", err)
-		os.Exit(1)
-	}
+
+	ctx, cancel := wrapCtx(context.Background())
+	defer cancel()
+	return app.Run(ctx)
 }
 
 func handle(w http.ResponseWriter, r *http.Request) {
@@ -539,4 +586,17 @@ func timeParse(text string) (time.Time, bool) {
 		}
 	}
 	return t, false
+}
+
+func wrapCtx(ctx context.Context) (context.Context, context.CancelFunc) {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithCancel(ctx)
+	go func() {
+		<-sigCh
+		signal.Stop(sigCh)
+		cancel()
+	}()
+	return ctx, cancel
 }
