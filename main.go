@@ -38,6 +38,8 @@ import (
 	"time"
 
 	"perkeep.org/pkg/blob"
+	"perkeep.org/pkg/blobserver/memory"
+	"perkeep.org/pkg/schema"
 	"perkeep.org/pkg/client"
 
 	"github.com/go-kit/kit/log"
@@ -101,8 +103,9 @@ func Main() error {
 			defer mimeCache.Close()
 			Log("msg", "Listening", "http", s.Addr, "camlistore", server)
 			return s.ListenAndServe()
-		 },
+		},
 	}
+
 	refCmd := ffcli.Command{Name: "ref",
 		Exec: func(ctx context.Context, args []string) error {
 			var ref string
@@ -124,12 +127,41 @@ func Main() error {
 		},
 	}
 
+	hshCmd := ffcli.Command{Name: "hash", FlagSet:flag.NewFlagSet("hash", flag.ContinueOnError),
+		Exec: func(ctx context.Context, args []string) error {
+			var mem memory.Storage
+			for _, fn := range args {
+				fh := os.Stdin
+				if fn == "" || fn == "-" {
+					fn = "<stdin>"
+				} else {
+					var err error
+					if fh, err = os.Open(fn); err != nil {
+						return err
+					}
+					fn = filepath.Base(fn)
+				}
+				br, err := schema.WriteFileFromReader(ctx, &mem, fn, fh)
+				fh.Close()
+				if err != nil {
+					return err
+				}
+				fmt.Println("---", br, "---")
+				s, _ := mem.BlobContents(br)
+				fmt.Println(s)
+			}
+			return nil
+		},
+	}
+	flagUseSHA1 := hshCmd.FlagSet.Bool("use-sha1", false, "Force use of sha1")
+
+
 	flag.CommandLine = flag.NewFlagSet("camutil", flag.ContinueOnError)
 	app := ffcli.Command{Name: "camutil",
-		Exec:        func(ctx context.Context, args []string) error { 
+		Exec: func(ctx context.Context, args []string) error {
 			return serveCmd.Exec(ctx, args)
 		},
-		Subcommands: []*ffcli.Command{&serveCmd, &refCmd},
+		Subcommands: []*ffcli.Command{&serveCmd, &refCmd, &hshCmd},
 	}
 
 	if err := app.Parse(os.Args[1:]); err != nil {
@@ -140,6 +172,11 @@ func Main() error {
 		camutil.Log = log.With(logger, "lib", "camutil").Log
 	}
 	camutil.Verbose = *flagVerbose
+
+	if *flagUseSHA1 {
+		os.Setenv("CAMLI_SHA1_ENABLED", "1")
+		os.Setenv("PK_TEST_USE_SHA1", "1")
+	}
 
 	ctx, cancel := wrapCtx(context.Background())
 	defer cancel()
