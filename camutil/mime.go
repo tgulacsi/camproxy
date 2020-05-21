@@ -21,7 +21,7 @@ import (
 	"io"
 
 	"github.com/golang/groupcache/lru"
-	"gopkg.in/h2non/filetype.v1"
+	"github.com/h2non/filetype"
 	"perkeep.org/pkg/sorted"
 	"perkeep.org/pkg/sorted/kvfile"
 )

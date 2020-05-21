@@ -23,6 +23,7 @@ require (
 	github.com/googleapis/gax-go v0.0.0-20161107002406-da06d194a00e // indirect
 	github.com/gopherjs/jsbuiltin v0.0.0-20170427220125-67703bfb044e // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/h2non/filetype v1.0.12
 	github.com/kardianos/osext v0.0.0-20151222153229-29ae4ffbc9a6 // indirect
 	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515 // indirect
 	github.com/neelance/astrewrite v0.0.0-20160511093645-99348263ae86 // indirect
