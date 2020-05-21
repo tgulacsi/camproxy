@@ -20,8 +20,8 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/golang/groupcache/lru"
 	"github.com/h2non/filetype"
+	"github.com/hashicorp/golang-lru"
 	"perkeep.org/pkg/sorted"
 	"perkeep.org/pkg/sorted/kvfile"
 )
@@ -49,7 +49,7 @@ func MIMETypeFromReader(r io.Reader) (mime string, reader io.Reader) {
 
 // MimeCache is the in-memory (LRU) and disk-based (kv) cache of mime types
 type MimeCache struct {
-	mem *lru.Cache
+	mem *lru.TwoQueueCache
 	db  sorted.KeyValue
 }
 
@@ -59,9 +59,11 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 	if maxMemCacheSize <= 0 {
 		maxMemCacheSize = DefaultMaxMemMimeCacheSize
 	}
-	mc.mem = lru.New(maxMemCacheSize)
-
 	var err error
+	if mc.mem, err = lru.New2Q(maxMemCacheSize); err != nil {
+		panic(err)
+	}
+
 	if mc.db, err = kvfile.NewStorage(filename); err != nil {
 		Log("msg", "cannot open/create db", "file", filename, "error", err)
 		mc.db = nil
