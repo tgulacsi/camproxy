@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -78,9 +79,10 @@ func Close() error {
 
 // NewUploader returns a new uploader for uploading files to the given server
 func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
+	key := fmt.Sprintf("%q\t%t\t%t", server, capCtime, skipHaveCache)
 	cachedUploaderMtx.Lock()
 	defer cachedUploaderMtx.Unlock()
-	u, ok := cachedUploader[server]
+	u, ok := cachedUploader[key]
 	if ok {
 		return u
 	}
@@ -92,12 +94,12 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		}
 		u = &Uploader{
 			server:        server,
-			gate:          syncutil.NewGate(8),
-			skipHaveCache: true,
+			gate:          syncutil.NewGate(runtime.GOMAXPROCS(-1)),
+			skipHaveCache: skipHaveCache,
 			StatReceiver:  recv,
 			Signer:        newDummySigner(),
 		}
-		cachedUploader[server] = u
+		cachedUploader[key] = u
 		return u
 	}
 	c, err := NewClient(server)
@@ -109,7 +111,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		server:        server,
 		args:          make([]string, 1, 2),
 		opts:          make([]string, 0, 3),
-		gate:          syncutil.NewGate(32),
+		gate:          syncutil.NewGate(runtime.GOMAXPROCS(-1)),
 		skipHaveCache: skipHaveCache,
 		Client:        c,
 		StatReceiver:  c,
@@ -132,7 +134,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 			u.env = append(os.Environ(), "CAMLI_DEBUG=true")
 		}
 	}
-	cachedUploader[server] = u
+	cachedUploader[key] = u
 	return u
 }
 
