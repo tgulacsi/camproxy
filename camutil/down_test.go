@@ -1,3 +1,7 @@
+// Copyright 2013, 2020 Tamás Gulácsi.
+//
+// SPDX-License-Identifier: Apache-2.0
+
 package camutil
 
 import (
