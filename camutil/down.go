@@ -243,7 +243,6 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 		closers = append(closers, rc)
 	}
 
-	Log("readers", len(readers))
 	if len(readers) == 0 {
 		return nil, io.EOF
 	}
