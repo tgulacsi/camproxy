@@ -415,7 +415,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 		filename := part.FileName()
 		if filename == "" {
 			if part.FormName() == "mtime" {
-				b := bytes.NewBuffer(make([]byte, 23))
+				b := bytes.NewBuffer(make([]byte, 0, 23))
 				if _, err = io.CopyN(b, part, 23); err == nil || err == io.EOF {
 					qmtime = b.String()
 				}
