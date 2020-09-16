@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"go4.org/syncutil"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"perkeep.org/pkg/blob"
@@ -37,7 +36,7 @@ type Uploader struct {
 	opts          []string
 	env           []string
 	skipHaveCache bool
-	gate          *syncutil.Gate
+	gate          chan struct{}
 	mtx           sync.Mutex
 	blobserver.StatReceiver
 	*schema.Signer
@@ -74,6 +73,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	if ok {
 		return u
 	}
+	maxProcs := runtime.GOMAXPROCS(-1)
 	if strings.HasPrefix(server, "file://") {
 		recv, err := localdisk.New(server[7:])
 		if err != nil {
@@ -82,7 +82,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		}
 		u = &Uploader{
 			server:        server,
-			gate:          syncutil.NewGate(runtime.GOMAXPROCS(-1)),
+			gate:          make(chan struct{}, maxProcs),
 			skipHaveCache: skipHaveCache,
 			StatReceiver:  recv,
 			Signer:        newDummySigner(),
@@ -99,7 +99,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		server:        server,
 		args:          make([]string, 1, 2),
 		opts:          make([]string, 0, 3),
-		gate:          syncutil.NewGate(runtime.GOMAXPROCS(-1)),
+		gate:          make(chan struct{}, maxProcs),
 		skipHaveCache: skipHaveCache,
 		Client:        c,
 		StatReceiver:  c,
@@ -152,8 +152,12 @@ func (u *Uploader) FromReader(ctx context.Context, fileName string, r io.Reader)
 	if err := ctx.Err(); err != nil {
 		return blob.Ref{}, err
 	}
-	u.gate.Start()
-	defer u.gate.Done()
+	select {
+	case u.gate <- struct{}{}:
+		defer func() { <-u.gate }()
+	case <-ctx.Done():
+		return blob.Ref{}, ctx.Err()
+	}
 	return schema.WriteFileFromReader(ctx, u.StatReceiver, filepath.Base(fileName), r)
 }
 
@@ -167,8 +171,12 @@ func (u *Uploader) FromReaderInfo(ctx context.Context, fi os.FileInfo, mime stri
 	file := schema.NewCommonFileMap(filepath.Base(fi.Name()), fi)
 	file = file.CapCreationTime().SetRawStringField("mimeType", mime)
 	file = file.SetType("file")
-	u.gate.Start()
-	defer u.gate.Done()
+	select {
+	case u.gate <- struct{}{}:
+		defer func() { <-u.gate }()
+	case <-ctx.Done():
+		return blob.Ref{}, ctx.Err()
+	}
 	return schema.WriteFileMap(ctx, u.StatReceiver, file, r)
 }
 
@@ -420,8 +428,12 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 
 	refs := make([]blob.Ref, 0, 2)
 
-	u.gate.Start()
-	defer u.gate.Done()
+	select {
+	case u.gate <- struct{}{}:
+		defer func() { <-u.gate }()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 
 	var (
 		lastErr error
