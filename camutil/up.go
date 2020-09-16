@@ -515,8 +515,15 @@ func RefToBase64(br blob.Ref) string {
 		Log("msg", "error marshaling", "blob", br, "error", err)
 		return ""
 	}
-	hn := br.HashName()
-	return hn + "-" + base64.URLEncoding.EncodeToString(data[len(hn)+1:])
+	var buf strings.Builder
+	hn := len(br.HashName())
+	enc := base64.URLEncoding
+	buf.Grow(hn + 1 + enc.EncodedLen(len(data)-1-hn))
+	buf.Write(data[:hn+1])
+	w := base64.NewEncoder(enc, &buf)
+	w.Write(data[hn+1:])
+	w.Close()
+	return buf.String()
 }
 
 func newDummySigner() *schema.Signer { //nolint:deadcode
