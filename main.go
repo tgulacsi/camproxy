@@ -39,15 +39,16 @@ import (
 var logger = log.NewLogfmtLogger(os.Stderr)
 
 var (
-	flagVerbose       = flag.Bool("v", false, "verbose logging")
-	flagInsecureTLS   = flag.Bool("k", camutil.InsecureTLS, "allow insecure TLS")
-	flagSkipIrregular = flag.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
-	//flagServer      = flag.String("server", ":3179", "Camlistore server address")
-	flagCapCtime      = flag.Bool("capctime", false, "forge ctime to be less or equal to mtime")
-	flagNoAuth        = flag.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
-	flagListen        = flag.String("listen", ":3178", "listen on")
-	flagParanoid      = flag.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
-	flagSkipHaveCache = flag.Bool("skiphavecache", false, "Skip have cache? (more stress on camlistored)")
+	fs = flag.NewFlagSet("serve", flag.ContinueOnError)
+	flagVerbose       = fs.Bool("v", false, "verbose logging")
+	flagInsecureTLS   = fs.Bool("k", camutil.InsecureTLS, "allow insecure TLS")
+	flagSkipIrregular = fs.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
+	//flagServer      = fs.String("server", ":3179", "Camlistore server address")
+	flagCapCtime      = fs.Bool("capctime", false, "forge ctime to be less or equal to mtime")
+	flagNoAuth        = fs.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
+	flagListen        = fs.String("listen", ":3178", "listen on")
+	flagParanoid      = fs.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
+	flagSkipHaveCache = fs.Bool("skiphavecache", false, "Skip have cache? (more stress on camlistored)")
 
 	server string
 )
@@ -64,7 +65,7 @@ func Main() error {
 
 	client.AddFlags() // add -server flag
 
-	serveCmd := ffcli.Command{Name: "serve", FlagSet: flag.CommandLine,
+	serveCmd := ffcli.Command{Name: "serve", FlagSet:fs,
 		Exec: func(ctx context.Context, args []string) error {
 			server = client.ExplicitServer()
 			camutil.InsecureTLS = *flagInsecureTLS
@@ -117,6 +118,7 @@ func Main() error {
 
 	upBytesCmd := ffcli.Command{Name: "upbytes",
 		Exec: func(ctx context.Context, args []string) error {
+			server = client.ExplicitServer()
 			r := io.ReadCloser(os.Stdin)
 			if !(len(args) == 0 || args[0] == "" || args[0] == "-") {
 				var err error
@@ -167,8 +169,7 @@ func Main() error {
 	}
 	flagUseSHA1 := hshCmd.FlagSet.Bool("use-sha1", false, "Force use of sha1")
 
-	flag.CommandLine = flag.NewFlagSet("camutil", flag.ContinueOnError)
-	app := ffcli.Command{Name: "camutil",
+	app := ffcli.Command{Name: "camutil",  FlagSet:flag.CommandLine,
 		Exec: func(ctx context.Context, args []string) error {
 			return serveCmd.Exec(ctx, args)
 		},
