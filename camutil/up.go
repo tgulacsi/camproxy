@@ -147,6 +147,19 @@ func (u *Uploader) Close() error {
 	return err
 }
 
+// UploadBytes uploads the contents of the io.Reader as "bytes" blob.
+func (u *Uploader) UploadBytes(ctx context.Context, r io.Reader) (blob.Ref, error) {
+	bb := schema.NewBuilder()
+	bb.SetType("bytes")
+	err := schema.WriteFileChunks(ctx, u.StatReceiver, bb, r)
+	if err != nil {
+		return blob.Ref{}, err
+	}
+	b := bb.Blob()
+	br, err := u.Client.UploadBlob(ctx, b)
+	return br.BlobRef, err
+}
+
 // FromReader uploads the contents of the io.Reader.
 func (u *Uploader) FromReader(ctx context.Context, fileName string, r io.Reader) (blob.Ref, error) {
 	if err := ctx.Err(); err != nil {

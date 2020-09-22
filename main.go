@@ -115,6 +115,30 @@ func Main() error {
 		},
 	}
 
+	upBytesCmd := ffcli.Command{Name: "upbytes",
+		Exec: func(ctx context.Context, args []string) error {
+			r := io.ReadCloser(os.Stdin)
+			if !(len(args) == 0 || args[0] == "" || args[0] == "-") {
+				var err error
+				if r, err = os.Open(args[0]); err != nil {
+					return err
+				}
+			}
+			defer r.Close()
+			up, err := getUploader()
+			if err != nil {
+				return err
+			}
+			defer up.Close()
+			br, err := up.UploadBytes(ctx, r)
+			if err != nil {
+				return err
+			}
+			_, err = fmt.Println(br)
+			return err
+		},
+	}
+
 	hshCmd := ffcli.Command{Name: "hash", FlagSet: flag.NewFlagSet("hash", flag.ContinueOnError),
 		Exec: func(ctx context.Context, args []string) error {
 			var mem memory.Storage
@@ -148,7 +172,7 @@ func Main() error {
 		Exec: func(ctx context.Context, args []string) error {
 			return serveCmd.Exec(ctx, args)
 		},
-		Subcommands: []*ffcli.Command{&serveCmd, &refCmd, &hshCmd},
+		Subcommands: []*ffcli.Command{&serveCmd, &refCmd, &hshCmd, &upBytesCmd},
 	}
 
 	if err := app.Parse(os.Args[1:]); err != nil {
