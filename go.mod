@@ -3,7 +3,7 @@ module github.com/tgulacsi/camproxy
 go 1.14
 
 require (
-	cloud.google.com/go v0.57.0 // indirect
+	cloud.google.com/go v0.72.0 // indirect
 	github.com/abbot/go-http-auth v0.4.0
 	github.com/bradfitz/latlong v0.0.0-20170410180902-f3db6d0dff40 // indirect
 	github.com/cznic/fileutil v0.0.0-20181122101858-4d67cfea8c87 // indirect
@@ -16,19 +16,20 @@ require (
 	github.com/dgraph-io/ristretto v0.0.0-20191025175511-c1f00be0418e
 	github.com/go-kit/kit v0.10.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
-	github.com/golang/protobuf v1.4.2 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
-	github.com/h2non/filetype v1.0.12
-	github.com/hashicorp/golang-lru v0.5.1
+	github.com/h2non/filetype v1.1.0
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/nf/cr2 v0.0.0-20180623103828-4699471a17ed // indirect
 	github.com/peterbourgon/ff/v3 v3.0.0
 	github.com/pkg/errors v0.9.1
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect
-	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
-	golang.org/x/image v0.0.0-20200430140353-33d19683fad8 // indirect
-	golang.org/x/net v0.0.0-20200520182314-0ba52f642ac2 // indirect
-	golang.org/x/sys v0.0.0-20200519105757-fe76b779f299 // indirect
-	perkeep.org v0.0.0-20200311132925-c2e31370ddef
+	golang.org/x/crypto v0.0.0-20201124201722-c8d3bf9c5392
+	golang.org/x/image v0.0.0-20200927104501-e162460cd6b5 // indirect
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b // indirect
+	golang.org/x/oauth2 v0.0.0-20201109201403-9fd604954f58 // indirect
+	golang.org/x/sys v0.0.0-20201119102817-f84b799fce68 // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	perkeep.org v0.0.0-20201120160001-b470765c15f1
 )

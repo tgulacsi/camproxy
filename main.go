@@ -39,7 +39,7 @@ import (
 var logger = log.NewLogfmtLogger(os.Stderr)
 
 var (
-	fs = flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs                = flag.NewFlagSet("serve", flag.ContinueOnError)
 	flagVerbose       = fs.Bool("v", false, "verbose logging")
 	flagInsecureTLS   = fs.Bool("k", camutil.InsecureTLS, "allow insecure TLS")
 	flagSkipIrregular = fs.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
@@ -65,7 +65,7 @@ func Main() error {
 
 	client.AddFlags() // add -server flag
 
-	serveCmd := ffcli.Command{Name: "serve", FlagSet:fs,
+	serveCmd := ffcli.Command{Name: "serve", FlagSet: fs,
 		Exec: func(ctx context.Context, args []string) error {
 			server = client.ExplicitServer()
 			camutil.InsecureTLS = *flagInsecureTLS
@@ -108,10 +108,11 @@ func Main() error {
 				ref = args[0]
 			}
 			br, err := camutil.Base64ToRef(ref)
-			if err != nil {
-				return err
+			if err == nil {
+				_, err = fmt.Println(br)
+			} else if br, ok := blob.Parse(ref); ok {
+				_, err = fmt.Println(camutil.RefToBase64(br))
 			}
-			_, err = fmt.Println(br)
 			return err
 		},
 	}
@@ -169,7 +170,7 @@ func Main() error {
 	}
 	flagUseSHA1 := hshCmd.FlagSet.Bool("use-sha1", false, "Force use of sha1")
 
-	app := ffcli.Command{Name: "camutil",  FlagSet:flag.CommandLine,
+	app := ffcli.Command{Name: "camutil", FlagSet: flag.CommandLine,
 		Exec: func(ctx context.Context, args []string) error {
 			return serveCmd.Exec(ctx, args)
 		},
