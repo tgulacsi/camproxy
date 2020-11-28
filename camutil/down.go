@@ -20,7 +20,6 @@ import (
 	"github.com/pkg/errors"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver/localdisk"
-	"perkeep.org/pkg/cacher"
 	"perkeep.org/pkg/client"
 	"perkeep.org/pkg/schema"
 )
@@ -84,7 +83,7 @@ var (
 
 // NewDownloader creates a new Downloader (client + properties + disk cache)
 // for the server
-func NewDownloader(server string) (*Downloader, error) {
+func NewDownloader(server string, noCache bool) (*Downloader, error) {
 	cachedDownloaderMtx.Lock()
 	defer cachedDownloaderMtx.Unlock()
 	down, ok := cachedDownloader[server]
@@ -104,12 +103,16 @@ func NewDownloader(server string) (*Downloader, error) {
 		return down, nil
 	}
 
-	down.Fetcher, err = NewBadgerCache(down.cl, 512<<20)
-	if err != nil {
-		return nil, errors.Wrap(err, "setup local disk cache")
-	}
-	if Verbose {
-		Log("msg", "Using temp blob cache directory "+down.Fetcher.(*BadgerCache).Root)
+	if noCache {
+		down.Fetcher = down.cl
+	} else {
+		down.Fetcher, err = NewBadgerCache(down.cl, 512<<20)
+		if err != nil {
+			return nil, errors.Wrap(err, "setup local disk cache")
+		}
+		if Verbose {
+			Log("msg", "Using temp blob cache directory "+down.Fetcher.(*BadgerCache).Root)
+		}
 	}
 	if server != "" {
 		down.args = []string{"-server=" + server}
@@ -124,7 +127,7 @@ func NewDownloader(server string) (*Downloader, error) {
 // Close closes the downloader (the underlying client)
 func (down *Downloader) Close() {
 	if down != nil && down.Fetcher != nil {
-		if dc, ok := down.Fetcher.(*cacher.DiskCache); ok {
+		if dc, ok := down.Fetcher.(interface{ Clean() }); ok {
 			dc.Clean()
 		}
 	}

@@ -44,6 +44,7 @@ var (
 	flagInsecureTLS   = fs.Bool("k", camutil.InsecureTLS, "allow insecure TLS")
 	flagSkipIrregular = fs.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
 	//flagServer      = fs.String("server", ":3179", "Camlistore server address")
+	flagNoCache       = fs.Bool("no-cache", true, "no disk cache")
 	flagCapCtime      = fs.Bool("capctime", false, "forge ctime to be less or equal to mtime")
 	flagNoAuth        = fs.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
 	flagListen        = fs.String("listen", ":3178", "listen on")
@@ -607,7 +608,7 @@ func getUploader() (*camutil.Uploader, error) {
 }
 
 func getDownloader() (*camutil.Downloader, error) {
-	return camutil.NewDownloader(server)
+	return camutil.NewDownloader(server, *flagNoCache)
 }
 
 func getParanoidPath(br blob.Ref) string {

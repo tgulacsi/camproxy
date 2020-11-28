@@ -495,7 +495,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			if i > 0 {
 				break
 			}
-			if down, err = NewDownloader(u.server); err != nil {
+			if down, err = NewDownloader(u.server, true); err != nil {
 				Log("msg", "cannot get downloader for checking uploads", "error", err)
 				break
 			}
