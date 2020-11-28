@@ -178,3 +178,13 @@ func (pc *PerCache) Put(ctx context.Context, nodeID string, data io.Reader) erro
 		return txn.Set([]byte(prefix+nodeID), b)
 	})
 }
+
+func (pc *PerCache) Fetch(ctx context.Context, br blob.Ref) (io.ReadCloser, uint32, error) {
+	return pc.sto.Fetch(ctx, br)
+}
+func (pc *PerCache) ReceiveBlob(ctx context.Context, br blob.Ref, r io.Reader) (blob.SizedRef, error) {
+	return pc.sto.ReceiveBlob(ctx, br, r)
+}
+func (pc *PerCache) StatBlobs(ctx context.Context, br []blob.Ref, f func(blob.SizedRef) error) error {
+	return pc.sto.StatBlobs(ctx, br, f)
+}

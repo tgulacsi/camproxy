@@ -104,12 +104,12 @@ func NewDownloader(server string) (*Downloader, error) {
 		return down, nil
 	}
 
-	down.Fetcher, err = cacher.NewDiskCache(down.cl)
+	down.Fetcher, err = NewBadgerCache(down.cl)
 	if err != nil {
 		return nil, errors.Wrap(err, "setup local disk cache")
 	}
 	if Verbose {
-		Log("msg", "Using temp blob cache directory "+down.Fetcher.(*cacher.DiskCache).Root)
+		Log("msg", "Using temp blob cache directory "+down.Fetcher.(*BadgerCache).Root)
 	}
 	if server != "" {
 		down.args = []string{"-server=" + server}
