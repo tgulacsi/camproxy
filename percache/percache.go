@@ -135,7 +135,7 @@ func (pc *PerCache) Close() error {
 	}
 	return firstErr
 }
-func (pc *PerCache) onCacheEvict(key uint64, value interface{}, cost int64) {
+func (pc *PerCache) onCacheEvict(key, conflict uint64, value interface{}, cost int64) {
 	pc.mu.Lock()
 	defer pc.mu.Unlock()
 	v, ok := value.([]byte)
