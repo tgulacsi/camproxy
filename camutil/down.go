@@ -104,7 +104,7 @@ func NewDownloader(server string) (*Downloader, error) {
 		return down, nil
 	}
 
-	down.Fetcher, err = NewBadgerCache(down.cl)
+	down.Fetcher, err = NewBadgerCache(down.cl, 512<<20)
 	if err != nil {
 		return nil, errors.Wrap(err, "setup local disk cache")
 	}

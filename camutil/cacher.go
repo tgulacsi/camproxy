@@ -15,10 +15,10 @@ import (
 	"perkeep.org/pkg/cacher"
 )
 
-func NewBadgerCache(fetcher blob.Fetcher) (*BadgerCache, error) {
+func NewBadgerCache(fetcher blob.Fetcher, maxSize int64) (*BadgerCache, error) {
 	var cacheDir string
 	if dn, err := os.UserCacheDir(); err == nil {
-		cacheDir = filepath.Join(dn, "blobs")
+		cacheDir = filepath.Join(dn, "perkeep", "blobs")
 		if fi, err := os.Stat(cacheDir); err != nil || !fi.Mode().IsDir() {
 			if err := os.Mkdir(cacheDir, 0700); err != nil {
 				log.Printf("Warning: failed to make %s: %v; using tempdir instead", cacheDir, err)
@@ -33,7 +33,7 @@ func NewBadgerCache(fetcher blob.Fetcher) (*BadgerCache, error) {
 		}
 	}
 
-	diskcache, err := percache.New(cacheDir, 10000, 1<<30)
+	diskcache, err := percache.New(cacheDir, 0, maxSize)
 	if err != nil {
 		return nil, err
 	}
