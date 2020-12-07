@@ -52,39 +52,51 @@ func NewStorageEvict(storage blobserver.Storage, evictPolicy EvictPolicy) Storag
 	return Storage{storage: storage, evictPolicy: evictPolicy}
 }
 
-// EvictPolicy represents a cache eviction policy returns what has been evicted.
-type EvictPolicy func(addKey string) (evicted string)
+// EvictPolicy represents a cache eviction policy
+type EvictPolicy interface {
+	// Add returns what has been evicted.
+	Get(key string)
+	Put(key string) (evicted string)
+	Remove(key string)
+}
 
 // LRUEvictPolicy returns a simple LRU based eviction policy.
-func LRUEvictPolicy(size int) EvictPolicy {
-	var evicted string
-	lru, err := simplelru.NewLRU(size, func(key, value interface{}) { evicted = key.(string) })
+func LRUEvictPolicy(size int) lruPolicy {
+	var lp lruPolicy
+	var err error
+	lp.lru, err = simplelru.NewLRU(size, func(key, value interface{}) { lp.lastEvicted = key.(string) })
 	if err != nil {
 		panic(err)
 	}
-	var null struct{}
-	return func(key string) string {
-		if !lru.Add(key, null) {
-			return ""
-		}
-		return evicted
-	}
+	return lp
 }
 
-func (sto Storage) touch(ctx context.Context, br blob.Ref) {
-	if evict := sto.evictPolicy(br.String()); evict != "" {
-		if ebr, ok := blob.Parse(evict); ok && ebr.Valid() {
-			_ = sto.storage.RemoveBlobs(ctx, []blob.Ref{ebr})
-		}
-	}
+var _ = EvictPolicy(lruPolicy{})
+
+type lruPolicy struct {
+	lru         *simplelru.LRU
+	lastEvicted string
 }
+
+func (lp lruPolicy) Put(key string) (evicted string) {
+	var null struct{}
+	if !lp.lru.Add(key, null) {
+		return ""
+	}
+	return lp.lastEvicted
+}
+func (lp lruPolicy) Get(key string)    { lp.lru.Get(key) }
+func (lp lruPolicy) Remove(key string) { lp.lru.Remove(key) }
 
 func (sto Storage) Fetch(ctx context.Context, br blob.Ref) (io.ReadCloser, uint32, error) {
-	sto.touch(ctx, br)
+	sto.evictPolicy.Get(br.String())
 	return sto.storage.Fetch(ctx, br)
 }
 
 func (sto Storage) RemoveBlobs(ctx context.Context, blobs []blob.Ref) error {
+	for _, br := range blobs {
+		sto.evictPolicy.Remove(br.String())
+	}
 	return sto.storage.RemoveBlobs(ctx, blobs)
 }
 
@@ -93,7 +105,7 @@ func (sto Storage) StatBlobs(ctx context.Context, blobs []blob.Ref, fn func(blob
 		if err := fn(sr); err != nil {
 			return err
 		}
-		sto.touch(ctx, sr.Ref)
+		sto.evictPolicy.Get(sr.Ref.String())
 		return nil
 	})
 	return err
@@ -105,7 +117,7 @@ func (sto Storage) EnumerateBlobs(ctx context.Context, dest chan<- blob.SizedRef
 		defer close(dest)
 		for sr := range ch {
 			dest <- sr
-			sto.touch(ctx, sr.Ref)
+			sto.evictPolicy.Get(sr.Ref.String())
 		}
 	}()
 	return sto.storage.EnumerateBlobs(ctx, ch, after, limit)
@@ -116,7 +128,11 @@ func (sto Storage) ReceiveBlob(ctx context.Context, br blob.Ref, source io.Reade
 	if err != nil {
 		return sr, err
 	}
-	sto.touch(ctx, br)
+	if evict := sto.evictPolicy.Put(br.String()); evict != "" {
+		if ebr, ok := blob.Parse(evict); ok && ebr.Valid() {
+			_ = sto.storage.RemoveBlobs(ctx, []blob.Ref{ebr})
+		}
+	}
 	return sr, nil
 }
 
