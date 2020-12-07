@@ -83,7 +83,7 @@ func (sto Storage) EnumerateBlobs(ctx context.Context, dest chan<- blob.SizedRef
 	ch := make(chan blob.SizedRef)
 	var sized []blob.SizedRef
 	go func() {
-		defer close(ch)
+		defer close(dest)
 		for sr := range ch {
 			dest <- sr
 			sized = append(sized, sr)

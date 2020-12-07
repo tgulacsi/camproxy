@@ -11,9 +11,12 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os"
 	"sync"
 
+	badgerdb "github.com/dgraph-io/badger/v2"
 	"github.com/dgraph-io/ristretto"
+	"github.com/tgulacsi/camproxy/blobserver/badger"
 	"github.com/tgulacsi/camproxy/blobserver/trace"
 
 	"perkeep.org/pkg/blob"
@@ -29,9 +32,7 @@ const (
 	DefaultMaxSize  = 1 << 30
 )
 
-// New creates a new cache using the given blobserver,
-// evicting using github.com/digraph-io/ristretto.
-func New(storage blobserver.Storage, maxCount, maxSize int64) (*PerCache, error) {
+func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 	if maxCount <= 0 {
 		maxCount = DefaultMaxCount
 	}
@@ -48,9 +49,18 @@ func New(storage blobserver.Storage, maxCount, maxSize int64) (*PerCache, error)
 	}); err != nil {
 		return nil, err
 	}
+	bOpts := badgerdb.DefaultOptions(root)
+	pc.db, err = badgerdb.Open(bOpts)
+	if err != nil {
+		os.RemoveAll(root)
+		os.MkdirAll(root, 0755)
+		if pc.db, err = badgerdb.Open(bOpts); err != nil {
+			return nil, err
+		}
+	}
 
 	pc.sto = &trace.Storage{
-		Storage: storage,
+		Storage: badger.NewManaged(pc.db, valuePrefix),
 		OnFetch: func(blobs []blob.SizedRef, err error) {
 			if err != nil {
 				return
