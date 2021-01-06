@@ -32,7 +32,6 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/peterbourgon/ff/v3/ffcli"
-	"github.com/pkg/errors"
 	"github.com/tgulacsi/camproxy/camutil"
 )
 
@@ -412,7 +411,7 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, e
 		fh, err = os.Create(fn)
 	}
 	if err != nil {
-		return "", "", errors.Wrapf(err, "create temp file %q", fn)
+		return "", "", fmt.Errorf("create temp file %q: %w", fn, err)
 	}
 	defer fh.Close()
 	rdr := io.Reader(r.Body)
@@ -454,7 +453,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 		fh, err := os.Create(fn)
 		if err != nil {
 			part.Close()
-			return nil, nil, errors.Wrapf(err, "create temp file %q", fn)
+			return nil, nil, fmt.Errorf("create temp file %q: %w", fn, err)
 		}
 		mimeType := part.Header.Get("Content-Type")
 		rdr := io.Reader(part)
@@ -472,7 +471,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 			err = closeErr
 		}
 		if err != nil {
-			return nil, nil, errors.Wrapf(err, "write %q", fn)
+			return nil, nil, fmt.Errorf("write %q: %w", fn, err)
 		}
 		lastmod = parseLastModified(part.Header.Get("Last-Modified"), qmtime)
 		if !lastmod.IsZero() {

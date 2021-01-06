@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -17,7 +18,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pkg/errors"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver/localdisk"
 	"perkeep.org/pkg/client"
@@ -108,7 +108,7 @@ func NewDownloader(server string, noCache bool) (*Downloader, error) {
 	} else {
 		down.Fetcher, err = NewBadgerCache(down.cl, 512<<20)
 		if err != nil {
-			return nil, errors.Wrap(err, "setup local disk cache")
+			return nil, fmt.Errorf("setup local disk cache: %w", err)
 		}
 		if Verbose {
 			Log("msg", "Using temp blob cache directory "+down.Fetcher.(*BadgerCache).Root)
@@ -162,12 +162,12 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	t = []byte(arg[:i])
 	i = bytes.IndexByte(t, byte('-'))
 	if i < 0 {
-		err = errors.New(fmt.Sprintf("no - in %q", arg))
+		err = fmt.Errorf("no - in %q", arg)
 		return
 	}
 	n, err = base64.URLEncoding.Decode(b[:cap(b)], t[i+1:])
 	if err != nil {
-		err = errors.Wrapf(err, "cannot decode %q as base64", t[i+1:])
+		err = fmt.Errorf("cannot decode %q as base64: %w", t[i+1:], err)
 		return
 	}
 	b = b[:n]
@@ -181,7 +181,7 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	arg = string(t[:i+1+n])
 	br, ok := blob.Parse(arg)
 	if !ok {
-		err = errors.New(fmt.Sprintf("cannot parse %q as blobref", arg))
+		err = fmt.Errorf("cannot parse %q as blobref: %w", arg, err)
 		return
 	}
 	return br, nil
@@ -212,8 +212,8 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 					io.Reader
 					io.Closer
 				}{r, ioutil.NopCloser(nil)}
-			} else if errors.Cause(err) == os.ErrNotExist {
-				return nil, errors.Wrapf(err, "%v", br)
+			} else if errors.Is(err, os.ErrNotExist) {
+				return nil, fmt.Errorf("%v: %w", br, err)
 			} else {
 				Log("error", err)
 			}
@@ -236,11 +236,11 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 		var errBuf bytes.Buffer
 		c.Stderr = &errBuf
 		if rc, err = c.StdoutPipe(); err != nil {
-			return nil, errors.Wrapf(err, "create stdout pipe for %s %q: %s", cmdPkGet, args, errBuf.Bytes())
+			return nil, fmt.Errorf("create stdout pipe for %s %q: %s: %w", cmdPkGet, args, errBuf.String(), err)
 		}
 		Log("msg", "calling "+cmdPkGet, "args", args)
 		if err = c.Run(); err != nil {
-			return nil, errors.Wrapf(err, "call %s %q: %s", cmdPkGet, args, errBuf.Bytes())
+			return nil, fmt.Errorf("call %s %q: %s: %w", cmdPkGet, args, errBuf.String(), err)
 		}
 		readers = append(readers, rc)
 		closers = append(closers, rc)
@@ -271,7 +271,7 @@ func (down *Downloader) Save(ctx context.Context, destDir string, contents bool,
 func fetch(ctx context.Context, src blob.Fetcher, br blob.Ref) (io.ReadCloser, error) {
 	r, _, err := src.Fetch(ctx, br)
 	if err != nil {
-		return nil, errors.Wrapf(err, "fetch %s", br)
+		return nil, fmt.Errorf("fetch %s: %w", br, err)
 	}
 	return r, nil
 }

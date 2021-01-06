@@ -10,6 +10,8 @@ package camutil
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -18,7 +20,6 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/pkg/errors"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/index"
 	"perkeep.org/pkg/schema"
@@ -31,7 +32,7 @@ const sniffSize = 900 * 1024
 func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref) error {
 	rc, err := fetch(ctx, src, br)
 	if err != nil {
-		return errors.Wrap(err, "smartFetch")
+		return fmt.Errorf("smartFetch: %w", err)
 	}
 	var onceClose sync.Once
 	closeRc := func() { onceClose.Do(func() { rc.Close() }) }
@@ -40,7 +41,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 	sniffer := index.NewBlobSniffer(br)
 	_, err = io.CopyN(sniffer, rc, sniffSize)
 	if err != nil && err != io.EOF {
-		return errors.Wrap(err, "sniff")
+		return fmt.Errorf("sniff: %w", err)
 	}
 
 	sniffer.Parse()
@@ -54,13 +55,15 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		// opaque data - put it in a file
 		f, err := os.Create(targ)
 		if err != nil {
-			return errors.Wrap(err, "opaque")
+			return fmt.Errorf("opaque: %w", err)
 		}
 		defer f.Close()
 		body, _ := sniffer.Body()
 		r := io.MultiReader(bytes.NewReader(body), rc)
-		_, err = io.Copy(f, r)
-		return errors.Wrap(err, "read")
+		if _, err = io.Copy(f, r); err != nil {
+			return fmt.Errorf("read: %w", err)
+		}
+		return nil
 	}
 	closeRc()
 
@@ -71,14 +74,14 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 			Log("msg", "Fetching directory", "blob", br, "destination", dir)
 		}
 		if err := os.MkdirAll(dir, b.FileMode()); err != nil {
-			return errors.Wrap(err, "mkdirall "+dir)
+			return fmt.Errorf("mkdirall %q: %w", dir, err)
 		}
 		if err := setFileMeta(dir, b); err != nil {
 			Log("msg", "setFileMeta", "error", err)
 		}
 		entries, ok := b.DirectoryEntries()
 		if !ok {
-			return errors.Errorf("bad entries blobref in dir %v", b.BlobRef())
+			return fmt.Errorf("bad entries blobref in dir %v", b.BlobRef())
 		}
 		return smartFetch(ctx, src, dir, entries)
 	case "static-set":
@@ -117,7 +120,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 	case "file":
 		fr, err := schema.NewFileReader(ctx, src, br)
 		if err != nil {
-			return errors.Wrap(err, "NewFileReader")
+			return fmt.Errorf("NewFileReader: %w", err)
 		}
 		fr.LoadAllChunks()
 		defer fr.Close()
@@ -137,11 +140,11 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 
 		f, err := os.Create(name)
 		if err != nil {
-			return errors.Wrap(err, "file type")
+			return fmt.Errorf("file type: %w", err)
 		}
 		defer f.Close()
 		if _, err := io.Copy(f, fr); err != nil {
-			return errors.Wrapf(err, "copy %s to %s", br, name)
+			return fmt.Errorf("copy %s to %s: %w", br, name, err)
 		}
 		if err := setFileMeta(name, b); err != nil {
 			Log("msg", "setFileMeta", "error", err)
@@ -205,7 +208,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 			return nil
 		}
 		if err != nil {
-			return errors.Wrapf(err, "osutil.Mkfifo(%q, 0600)", name)
+			return fmt.Errorf("osutil.Mkfifo(%q, 0600): %w", name, err)
 		}
 
 		if err := setFileMeta(name, b); err != nil {
@@ -240,7 +243,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 			return nil
 		}
 		if err != nil {
-			return errors.Wrap(err, name)
+			return fmt.Errorf("%s: %w", name, err)
 		}
 
 		if err := setFileMeta(name, b); err != nil {

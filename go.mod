@@ -1,6 +1,6 @@
 module github.com/tgulacsi/camproxy
 
-go 1.14
+go 1.15
 
 require (
 	cloud.google.com/go v0.72.0 // indirect
@@ -24,7 +24,6 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/nf/cr2 v0.0.0-20180623103828-4699471a17ed // indirect
 	github.com/peterbourgon/ff/v3 v3.0.0
-	github.com/pkg/errors v0.9.1
 	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go4.org v0.0.0-20200411211856-f5505b9728dd // indirect

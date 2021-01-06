@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/openpgp"
 	"golang.org/x/crypto/openpgp/armor"
 	"perkeep.org/pkg/blob"
@@ -42,8 +42,8 @@ type Uploader struct {
 	*schema.Signer
 }
 
-// FileIsEmpty is the error for zero length files
-var FileIsEmpty = errors.New("File is empty")
+// ErrFileIsEmpty is the error for zero length files
+var ErrFileIsEmpty = errors.New("file is empty")
 
 var cachedUploader = make(map[string]*Uploader, 1)
 var cachedUploaderMtx = new(sync.Mutex)
@@ -397,7 +397,7 @@ func (u *Uploader) UploadFileExt(ctx context.Context, path string, permanode boo
 	}
 
 	if fi.Size() <= 0 {
-		err = FileIsEmpty
+		err = ErrFileIsEmpty
 		return
 	}
 	args := make([]string, 1, 2)
@@ -474,7 +474,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			u.mtx.Unlock()
 		}
 		if err != nil {
-			lastErr = errors.Wrapf(err, "call %s %q: %s", cmdPkPut, args, errbuf.Bytes())
+			lastErr = fmt.Errorf("call %s %q: %s: %w", cmdPkPut, args, errbuf.String(), err)
 			continue
 		}
 		// the last line is the permanode ref, the first is the content
@@ -510,7 +510,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 				if len(blb.ByteParts()) > 0 {
 					break
 				}
-				lastErr = errors.New(fmt.Sprintf("blob[%s].parts is empty!", content))
+				lastErr = fmt.Errorf("blob[%s].parts is empty", content)
 				Log("msg", "blob", blb.JSON())
 			}
 		}
