@@ -6,6 +6,7 @@ package camutil
 
 import (
 	"bytes"
+	"net/url"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"sync"
 
+	"perkeep.org/pkg/auth"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver/localdisk"
 	"perkeep.org/pkg/client"
@@ -43,7 +45,7 @@ var (
 // and the environment variables.
 func NewClient(server string) (*client.Client, error) {
 	if server == "" {
-		server = "localhost:3179"
+		server = "http://localhost:3179"
 	}
 	cachedClientMtx.Lock()
 	defer cachedClientMtx.Unlock()
@@ -51,22 +53,37 @@ func NewClient(server string) (*client.Client, error) {
 	if ok {
 		return c, nil
 	}
-	if strings.HasPrefix(server, "file://") {
+	var authIncluded bool
+	opts := make([]client.ClientOption, 0, 4)
+	if !strings.Contains(server, "://") {
+		opts = append(opts, client.OptionServer(server), client.OptionInsecure(true))
+	} else if strings.HasPrefix(server, "file://") {
 		bs, err := localdisk.New(server[7:])
 		if err != nil {
 			return nil, err
 		}
-		c, err = client.New(client.OptionUseStorageClient(bs))
-		if err != nil {
-			return nil, err
-		}
+		opts = append(opts, client.OptionUseStorageClient(bs))
 	} else {
-		var err error
-		c, err = client.New(client.OptionServer(server), client.OptionInsecure(true))
+		URL, err := url.Parse(server)
 		if err != nil {
 			return nil, err
 		}
-		if err := c.SetupAuth(); err != nil {
+		opts = append(opts, client.OptionServer(server))
+		if URL.Scheme == "http" {
+			opts = append(opts, client.OptionInsecure(true))
+		}
+		if u := URL.User; u != nil && u.Username() != "" {
+			passwd, _ := u.Password()
+			opts = append(opts, client.OptionAuthMode(auth.NewBasicAuth(u.Username(), passwd)))
+			authIncluded = true
+		}
+	}
+	var err error
+	if c, err = client.New(opts...); err != nil {
+		return nil, err
+	}
+	if !authIncluded {
+		if err = c.SetupAuth(); err != nil {
 			return nil, err
 		}
 	}
