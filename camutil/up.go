@@ -31,15 +31,15 @@ import (
 // Uploader holds the server and args
 type Uploader struct {
 	*client.Client
+	blobserver.StatReceiver
+	*schema.Signer
+	gate          chan struct{}
 	server        string
 	args          []string
 	opts          []string
 	env           []string
-	skipHaveCache bool
-	gate          chan struct{}
 	mtx           sync.Mutex
-	blobserver.StatReceiver
-	*schema.Signer
+	skipHaveCache bool
 }
 
 // ErrFileIsEmpty is the error for zero length files

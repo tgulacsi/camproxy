@@ -556,8 +556,8 @@ var mimeCache *camutil.MimeCache
 type respWriter struct {
 	http.ResponseWriter
 	name, okMime  string
-	headerWritten bool
 	buf           []byte
+	headerWritten bool
 }
 
 func newRespWriter(w http.ResponseWriter, name, okMime string) *respWriter {
@@ -567,7 +567,7 @@ func newRespWriter(w http.ResponseWriter, name, okMime string) *respWriter {
 			okMime = m
 		}
 	}
-	return &respWriter{w, name, okMime, false, nil}
+	return &respWriter{ResponseWriter: w, name: name, okMime: okMime}
 }
 
 func (w *respWriter) Write(p []byte) (int, error) {
