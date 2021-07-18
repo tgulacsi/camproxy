@@ -1,4 +1,4 @@
-// Copyright 2020 Tamás Gulácsi.
+// Copyright 2020, 2021 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -14,7 +14,7 @@ import (
 	"os"
 	"sync"
 
-	badgerdb "github.com/dgraph-io/badger/v2"
+	badgerdb "github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/ristretto"
 	"github.com/tgulacsi/camproxy/blobserver/badger"
 	"github.com/tgulacsi/camproxy/blobserver/trace"
@@ -45,7 +45,9 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 		NumCounters: maxCount * 10,
 		MaxCost:     maxSize,
 		BufferItems: 64,
-		OnEvict:     pc.onCacheEvict,
+		OnEvict: func(item *ristretto.Item) {
+			pc.onCacheEvict(item.Key, item.Conflict, item.Value, item.Cost)
+		},
 	}); err != nil {
 		return nil, err
 	}

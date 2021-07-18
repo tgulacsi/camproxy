@@ -1,4 +1,4 @@
-// Copyright 2020 The Perkeep Authors
+// Copyright 2020, 2021 The Perkeep Authors
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -37,7 +37,7 @@ import (
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver"
 
-	badgerdb "github.com/dgraph-io/badger/v2"
+	badgerdb "github.com/dgraph-io/badger/v3"
 )
 
 var _ = blobserver.Storage(Storage{})
