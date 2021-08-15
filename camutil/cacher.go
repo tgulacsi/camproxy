@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/tgulacsi/camproxy/percache"
+	"github.com/tgulacsi/camproxy/blobserver/badger"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/cacher"
 )
@@ -28,12 +28,12 @@ func NewBadgerCache(fetcher blob.Fetcher, maxSize int64) (*BadgerCache, error) {
 	}
 	if cacheDir == "" {
 		var err error
-		if cacheDir, err = ioutil.TempDir("", "camlicache"); err != nil {
+		if cacheDir, err = ioutil.TempDir("", "perkeepcache"); err != nil {
 			return nil, err
 		}
 	}
 
-	diskcache, err := percache.New(cacheDir, 0, maxSize)
+	diskcache, err := badger.New(cacheDir, "")
 	if err != nil {
 		return nil, err
 	}

@@ -6,7 +6,6 @@ package camutil
 
 import (
 	"bytes"
-	"net/url"
 	"context"
 	"encoding/base64"
 	"encoding/hex"
@@ -14,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
