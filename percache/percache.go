@@ -10,9 +10,11 @@ package percache
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	badgerdb "github.com/dgraph-io/badger/v3"
 	"github.com/dgraph-io/ristretto"
@@ -46,6 +48,9 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 		MaxCost:     maxSize,
 		BufferItems: 64,
 		OnEvict: func(item *ristretto.Item) {
+			if item == nil || item.Value == nil {
+				return
+			}
 			pc.onCacheEvict(item.Key, item.Conflict, item.Value, item.Cost)
 		},
 	}); err != nil {
@@ -69,6 +74,7 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 			}
 			for _, br := range blobs {
 				k, _ := br.Ref.MarshalBinary()
+				pc.Log("msg", "fetch", "key", br.Ref.String())
 				//log.Println("GET", k)
 				pc.cache.Get(k)
 			}
@@ -80,6 +86,7 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 			//log.Println("SET", blobs)
 			for _, br := range blobs {
 				k, _ := br.Ref.MarshalBinary()
+				pc.Log("msg", "receive", "key", br.Ref.String())
 				pc.cache.Set(k, k, int64(br.Size))
 			}
 		},
@@ -90,6 +97,7 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 			for _, br := range blobs {
 				k, _ := br.Ref.MarshalBinary()
 				//log.Println("DEL", k)
+				pc.Log("msg", "remove", "key", k)
 				pc.cache.Del(k)
 			}
 		},
@@ -108,6 +116,7 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 			}
 			if err := item.Value(func(val []byte) error {
 				k, _ := ref.MarshalBinary()
+				pc.Log("msg", "set cache from db", "key", k)
 				pc.cache.Set(k, k, int64(len(val)))
 				return nil
 			}); err != nil {
@@ -119,15 +128,34 @@ func New(root string, maxCount, maxSize int64) (*PerCache, error) {
 }
 
 type PerCache struct {
-	db    *badgerdb.DB
-	cache *ristretto.Cache
-	sto   blobserver.Storage
-	mu    sync.Mutex
+	db      *badgerdb.DB
+	cache   *ristretto.Cache
+	sto     blobserver.Storage
+	mu      sync.Mutex
+	closing int32
+	Logger
+}
+type Logger interface {
+	Log(...interface{}) error
+}
+
+func (pc *PerCache) Log(keyvals ...interface{}) error {
+	if pc.Logger != nil {
+		if th, ok := pc.Logger.(interface{ Helper() }); ok {
+			th.Helper()
+		}
+		return pc.Logger.Log(keyvals...)
+	}
+	return nil
 }
 
 func (pc *PerCache) Close() error {
 	pc.mu.Lock()
-	defer pc.mu.Unlock()
+	atomic.StoreInt32(&pc.closing, 1)
+	defer func() {
+		atomic.StoreInt32(&pc.closing, 0)
+		pc.mu.Unlock()
+	}()
 	pc.cache.Close()
 	firstErr := pc.db.Close()
 	if cl, ok := pc.sto.(blobserver.ShutdownStorage); ok {
@@ -138,13 +166,18 @@ func (pc *PerCache) Close() error {
 	return firstErr
 }
 func (pc *PerCache) onCacheEvict(key, conflict uint64, value interface{}, cost int64) {
-	pc.mu.Lock()
-	defer pc.mu.Unlock()
+	if atomic.LoadInt32(&pc.closing) == 0 {
+		pc.mu.Lock()
+		defer pc.mu.Unlock()
+	}
 	v, ok := value.([]byte)
 	if !ok {
 		return
 	}
 	//log.Println("EVICT", v)
+	//pc.Log("msg", "EVICT", "v", string(v))
+
+	pc.Log("msg", "evict", fmt.Sprintf("%x", value.([]byte)))
 	pc.db.Update(func(txn *badgerdb.Txn) error {
 		return txn.Delete(append(append(make([]byte, 0, len(valuePrefix)+len(v)), valuePrefix...), v...))
 	})
