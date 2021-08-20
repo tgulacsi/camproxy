@@ -253,7 +253,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		return nil
 
 	default:
-		return errors.New("unknown blob type: " + b.Type())
+		return fmt.Errorf("unknown blob type: %v", b.Type())
 	}
 }
 
