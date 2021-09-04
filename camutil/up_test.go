@@ -6,6 +6,7 @@ package camutil
 
 import (
 	"context"
+	"encoding/json"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -18,6 +19,22 @@ func TestNewPermanode(t *testing.T) {
 		t.Fatalf("TempDir: %v", err)
 	}
 	defer os.RemoveAll(tempDir)
+
+	oLog := Log
+	logM := make(map[string]interface{})
+	Log = func(keyvals ...interface{}) error {
+		t.Helper()
+		for k := range logM {
+			delete(logM, k)
+		}
+		for i := 0; i < len(keyvals); i += 2 {
+			logM[keyvals[i].(string)] = keyvals[i+1]
+		}
+		b, err := json.Marshal(logM)
+		t.Log(string(b))
+		return err
+	}
+	defer func() { Log = oLog }()
 
 	u := NewUploader("file://"+tempDir, true, true)
 	defer u.Close()

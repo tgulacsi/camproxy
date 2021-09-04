@@ -349,6 +349,7 @@ func (u *Uploader) SetPermanodeAttrs(ctx context.Context, perma blob.Ref, attrs 
 		setAttr = func(k, v string) (blob.Ref, error) {
 			refs, err := u.camput(ctx, "attr", pS, k, v)
 			if err != nil || len(refs) == 0 {
+				Log("msg", "SetPermanodeAttrs", "key", k, "value", v, "perma", pS, "error", err)
 				return blob.Ref{}, err
 			}
 			return refs[0], nil
@@ -400,11 +401,11 @@ func (u *Uploader) UploadFileExt(ctx context.Context, path string, permanode boo
 		err = ErrFileIsEmpty
 		return
 	}
-	args := make([]string, 1, 2)
-	args[0] = path
+	args := make([]string, 0, 2)
 	if permanode {
 		args = append(args, "--permanode")
 	}
+	args = append(args, path)
 	refs, err := u.camput(ctx, "file", args...)
 	if len(refs) > 0 {
 		content = refs[0]
@@ -437,6 +438,8 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 		var base string
 		dir, base = filepath.Split(modeArgs[0])
 		args = append(args, base)
+	} else {
+		args = append(args, modeArgs...)
 	}
 
 	refs := make([]blob.Ref, 0, 2)
@@ -450,7 +453,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 
 	var (
 		lastErr error
-		errbuf  bytes.Buffer
+		errbuf  strings.Builder
 		down    *Downloader
 	)
 
@@ -460,7 +463,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			time.Sleep(time.Duration(i) * time.Second)
 		}
 		Log("msg", cmdPkPut, "args", args)
-		c := exec.Command(cmdPkPut, args[0:]...)
+		c := exec.CommandContext(ctx, cmdPkPut, args...)
 		c.Dir = dir
 		c.Env = u.env
 		c.Stderr = &errbuf
@@ -475,6 +478,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 		}
 		if err != nil {
 			lastErr = fmt.Errorf("call %s %q: %s: %w", cmdPkPut, args, errbuf.String(), err)
+			Log("msg", cmdPkPut, "args", args, "error", lastErr.Error())
 			continue
 		}
 		// the last line is the permanode ref, the first is the content
