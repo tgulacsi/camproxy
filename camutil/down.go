@@ -87,6 +87,7 @@ func NewClient(server string) (*client.Client, error) {
 	rc := retryablehttp.NewClient()
 	clcl := *c.HTTPClient()
 	rc.HTTPClient = &clcl
+	rc.Logger = nil
 	rc.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
 		retry, err := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
 		if !retry || err == nil {
