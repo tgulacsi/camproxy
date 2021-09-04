@@ -13,12 +13,14 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/go-retryablehttp"
 	"perkeep.org/pkg/auth"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver/localdisk"
@@ -82,6 +84,21 @@ func NewClient(server string) (*client.Client, error) {
 	if c, err = client.New(opts...); err != nil {
 		return nil, err
 	}
+	rc := retryablehttp.NewClient()
+	clcl := *c.HTTPClient()
+	rc.HTTPClient = &clcl
+	rc.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+		retry, err := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
+		if !retry || err == nil {
+			return retry, err
+		}
+		if resp.Body != nil {
+			b, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 2000))
+			err = fmt.Errorf("%w: %s", err, string(b))
+		}
+		return retry, err
+	}
+	c.SetHTTPClient(rc.StandardClient())
 	if !authIncluded {
 		if err = c.SetupAuth(); err != nil {
 			return nil, err
