@@ -644,9 +644,13 @@ func wrapCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	var cancel context.CancelFunc
 	ctx, cancel = context.WithCancel(ctx)
 	go func() {
-		<-sigCh
+		sig := <-sigCh
 		signal.Stop(sigCh)
 		cancel()
+		if p, _ := os.FindProcess(os.Getpid()); p != nil {
+			time.Sleep(time.Second)
+			_ = p.Signal(sig)
+		}
 	}()
 	return ctx, cancel
 }
