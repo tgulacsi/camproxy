@@ -7,6 +7,7 @@ package camutil
 import (
 	"crypto/sha1"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -23,13 +24,13 @@ func SetupBasicAuthChecker(handler http.HandlerFunc, camliAuth string) http.Hand
 	}
 	parts := strings.Split(camliAuth, ":")
 	if len(parts) < 3 || parts[0] != "userpass" {
-		Log("msg", "unrecognizable camliAuth "+camliAuth)
+		logger.Error(fmt.Errorf("unrecognizable camliAuth %q", camliAuth), "SetupBasicAuthHandler")
 		return handler
 	}
 	username := parts[1]
 	hsh := sha1.New()
 	if _, err := io.WriteString(hsh, parts[2]); err != nil {
-		Log("msg", "error hashing user:passw", "error", err)
+		logger.Error(err, "hashing user:passw")
 		return nil
 	}
 	passwd := "{SHA}" + base64.StdEncoding.EncodeToString(hsh.Sum(nil))

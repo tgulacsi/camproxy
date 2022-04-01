@@ -48,9 +48,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 	b, ok := sniffer.SchemaBlob()
 
 	if !ok {
-		if Verbose {
-			Log("msg", "Fetching opaque data", "blob", br, "destination", targ)
-		}
+		logger.V(1).Info("Fetching opaque data", "blob", br, "destination", targ)
 
 		// opaque data - put it in a file
 		f, err := os.Create(targ)
@@ -70,14 +68,12 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 	switch b.Type() {
 	case "directory":
 		dir := filepath.Join(targ, b.FileName())
-		if Verbose {
-			Log("msg", "Fetching directory", "blob", br, "destination", dir)
-		}
+		logger.V(1).Info("Fetching directory", "blob", br, "destination", dir)
 		if err := os.MkdirAll(dir, b.FileMode()); err != nil {
 			return fmt.Errorf("mkdirall %q: %w", dir, err)
 		}
 		if err := setFileMeta(dir, b); err != nil {
-			Log("msg", "setFileMeta", "error", err)
+			logger.Error(err, "setFileMeta")
 		}
 		entries, ok := b.DirectoryEntries()
 		if !ok {
@@ -85,9 +81,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 		return smartFetch(ctx, src, dir, entries)
 	case "static-set":
-		if Verbose {
-			Log("msg", "Fetching directory entries", "blob", br, "destination", targ)
-		}
+		logger.V(1).Info("Fetching directory entries", "blob", br, "destination", targ)
 
 		// directory entries
 		const numWorkers = 10
@@ -128,15 +122,11 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		name := filepath.Join(targ, b.FileName())
 
 		if fi, err := os.Stat(name); err == nil && fi.Size() == fr.Size() {
-			if Verbose {
-				Log("msg", "Skipping (already exists).", "file", name)
-			}
+			logger.V(1).Info("Skipping (already exists).", "file", name)
 			return nil
 		}
 
-		if Verbose {
-			Log("msg", "Writing", "blob", br, "destination", name)
-		}
+		logger.V(1).Info("Writing", "blob", br, "destination", name)
 
 		f, err := os.Create(name)
 		if err != nil {
@@ -147,7 +137,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 			return fmt.Errorf("copy %s to %s: %w", br, name, err)
 		}
 		if err := setFileMeta(name, b); err != nil {
-			Log("msg", "setFileMeta", "error", err)
+			logger.Error(err, "setFileMeta")
 		}
 		return nil
 	case "symlink":
@@ -164,9 +154,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 		name := filepath.Join(targ, sl.FileName())
 		if _, err := os.Lstat(name); err == nil {
-			if Verbose {
-				Log("msg", "Skipping creating symbolic link "+name+": A file with that name exists")
-			}
+			logger.V(1).Info("Skipping creating symbolic link " + name + ": A file with that name exists")
 			return nil
 		}
 		target := sl.SymlinkTargetString()
@@ -198,13 +186,13 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 
 		if _, err := os.Lstat(name); err == nil {
-			Log("msg", "Skipping FIFO "+name+": A file with that name already exists")
+			logger.Info("Skipping FIFO " + name + ": A file with that name already exists")
 			return nil
 		}
 
 		err = syscall.Mkfifo(name, 0600)
 		if err == ErrNotSupported {
-			Log("msg", "Skipping FIFO "+name+": Unsupported filetype")
+			logger.Info("Skipping FIFO " + name + ": Unsupported filetype")
 			return nil
 		}
 		if err != nil {
@@ -212,7 +200,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 
 		if err := setFileMeta(name, b); err != nil {
-			Log("msg", "setFileMeta", "error", err)
+			logger.Info("setFileMeta", "error", err)
 		}
 
 		return nil
@@ -233,13 +221,13 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 
 		if _, err := os.Lstat(name); err == nil {
-			Log("msg", "Skipping socket "+name+": A file with that name already exists")
+			logger.Info("Skipping socket " + name + ": A file with that name already exists")
 			return nil
 		}
 
 		err = mksocket(name)
 		if err == ErrNotSupported {
-			Log("msg", "Skipping socket "+name+": Unsupported filetype")
+			logger.Info("Skipping socket " + name + ": Unsupported filetype")
 			return nil
 		}
 		if err != nil {
@@ -247,7 +235,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 
 		if err := setFileMeta(name, b); err != nil {
-			Log("msg", "setFileMeta", "error", err)
+			logger.Info("setFileMeta", "error", err)
 		}
 
 		return nil

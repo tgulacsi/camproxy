@@ -1,4 +1,4 @@
-// Copyright 2013, 2020 Tamás Gulácsi.
+// Copyright 2013, 2022 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -30,12 +30,15 @@ import (
 	"perkeep.org/pkg/client"
 	"perkeep.org/pkg/schema"
 
-	"github.com/go-kit/kit/log"
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/tgulacsi/camproxy/camutil"
+
+	"github.com/go-logr/zerologr"
+	"github.com/rs/zerolog"
 )
 
-var logger = log.NewLogfmtLogger(os.Stderr)
+var zl = zerolog.New(os.Stderr)
+var logger = zerologr.New(&zl)
 
 var (
 	fs                = flag.NewFlagSet("serve", flag.ContinueOnError)
@@ -55,14 +58,12 @@ var (
 
 func main() {
 	if err := Main(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR %+v", err)
+		logger.Error(err, "ERROR")
 		os.Exit(1)
 	}
 }
 
 func Main() error {
-	Log := logger.Log
-
 	client.AddFlags() // add -server flag
 
 	serveCmd := ffcli.Command{Name: "serve", FlagSet: fs,
@@ -90,7 +91,7 @@ func Main() error {
 				"mimecache-"+os.Getenv("BRUNO_CUS")+"_"+os.Getenv("BRUNO_ENV")+".kv"),
 				0)
 			defer mimeCache.Close()
-			Log("msg", "Listening", "http", s.Addr, "camlistore", server)
+			logger.Info("Listening", "http", s.Addr, "camlistore", server)
 			return s.ListenAndServe()
 		},
 	}
@@ -182,9 +183,8 @@ func Main() error {
 	}
 
 	if *flagVerbose {
-		camutil.Log = log.With(logger, "lib", "camutil").Log
+		camutil.SetLogger(logger.WithValues("lib", "camutil"))
 	}
-	camutil.Verbose = *flagVerbose
 
 	if *flagUseSHA1 {
 		os.Setenv("CAMLI_SHA1_ENABLED", "1")
@@ -197,8 +197,6 @@ func Main() error {
 }
 
 func handle(w http.ResponseWriter, r *http.Request) {
-	Log := logger.Log
-
 	if r == nil {
 		http.Error(w, "empty request", 400)
 		return
@@ -276,9 +274,9 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if paraSource != "" && paraDest != "" { // save at last
 				os.MkdirAll(filepath.Dir(paraDest), 0700)
-				Log("msg", "Paranoid copying", "src", paraSource, "dst", paraDest)
+				logger.Info("Paranoid copying", "src", paraSource, "dst", paraDest)
 				if err = camutil.LinkOrCopy(paraSource, paraDest); err != nil {
-					Log("msg", "copying", "src", paraSource, "dst", paraDest, "error", err)
+					logger.Info("copying", "src", paraSource, "dst", paraDest, "error", err)
 				}
 			}
 			os.RemoveAll(dn)
@@ -288,12 +286,12 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 		ct := r.Header.Get("Content-Type")
 		if ct, _, err = mime.ParseMediaType(ct); err != nil {
-			Log("msg", "parsing Content-Type", "ct", ct, "error", err)
+			logger.Info("parsing Content-Type", "ct", ct, "error", err)
 			if ct == "" {
 				ct = r.Header.Get("Content-Type")
 			}
 		}
-		Log("msg", "request Content-Type: "+ct)
+		logger.Info("request Content-Type: " + ct)
 
 		switch ct {
 		case "multipart/form", "multipart/form-data", "application/x-www-form-urlencoded":
@@ -320,7 +318,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		Log("msg", "uploading", "files", filenames, "mime-types", mimetypes)
+		logger.Info("uploading", "files", filenames, "mime-types", mimetypes)
 
 		short := values.Get("short") == "1"
 		var attrs map[string]string
@@ -389,7 +387,6 @@ func handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, err error) {
-	Log := logger.Log
 	mimeType = r.Header.Get("Content-Type")
 	lastmod := parseLastModified(r.Header.Get("Last-Modified"), r.URL.Query().Get("mtime"))
 	cd := r.Header.Get("Content-Disposition")
@@ -398,13 +395,13 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, e
 	if cd != "" {
 		_, params, err := mime.ParseMediaType(cd)
 		if err != nil {
-			Log("msg", "parsing Content-Disposition", "cd", cd, "error", err)
+			logger.Info("parsing Content-Disposition", "cd", cd, "error", err)
 		} else {
 			fn = params["filename"]
 		}
 	}
 	if fn == "" {
-		Log("msg", "Cannot determine filename", "content-disposition", cd)
+		logger.Info("Cannot determine filename", "content-disposition", cd)
 		fh, err = ioutil.TempFile(destDir, "file-")
 	} else {
 		fn = filepath.Join(destDir, safeBaseFn(fn))
@@ -420,20 +417,18 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, e
 	}
 	_, err = io.Copy(fh, rdr)
 	if err != nil {
-		Log("msg", "saving request body", "dst", fh.Name(), "error", err)
+		logger.Info("saving request body", "dst", fh.Name(), "error", err)
 	}
 	filename = fh.Name()
 	if !lastmod.IsZero() {
 		if err = os.Chtimes(filename, lastmod, lastmod); err != nil {
-			Log("msg", "chtimes", "dst", filename, "error", err)
+			logger.Info("chtimes", "dst", filename, "error", err)
 		}
 	}
 	return
 }
 
 func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filenames, mimetypes []string, err error) {
-	Log := logger.Log
-
 	var fn string
 	var lastmod time.Time
 	var part *multipart.Part
@@ -476,7 +471,7 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 		lastmod = parseLastModified(part.Header.Get("Last-Modified"), qmtime)
 		if !lastmod.IsZero() {
 			if e := os.Chtimes(fn, lastmod, lastmod); e != nil {
-				Log("msg", "chtimes", "dst", fn, "error", e)
+				logger.Info("chtimes", "dst", fn, "error", e)
 			}
 		}
 	}
@@ -484,15 +479,13 @@ func saveMultipartTo(destDir string, mr *multipart.Reader, qmtime string) (filen
 }
 
 func safeBaseFn(filename string) string {
-	Log := logger.Log
-
 	if i := strings.LastIndexAny(filename, "/\\"); i >= 0 {
 		filename = filename[i+1:]
 	}
 	n := len(filename)
 	for strings.IndexByte(filename, '%') >= 0 {
 		if fn, err := url.QueryUnescape(filename); err != nil {
-			Log("msg", "QueryUnescape", "name", filename, "error", err)
+			logger.Info("QueryUnescape", "name", filename, "error", err)
 			break
 		} else {
 			filename = fn
@@ -516,7 +509,7 @@ func safeBaseFn(filename string) string {
 		_, _ = io.WriteString(hsh, filename)
 		hshS := base64.URLEncoding.EncodeToString(hsh.Sum(nil))
 		filename = filename[:255-1-len(hshS)-len(ext)] + "-" + ext
-		Log("msg", "filename too long", "old", old, "new", filename)
+		logger.Info("filename too long", "old", old, "new", filename)
 	}
 	return filename
 }
@@ -534,17 +527,15 @@ func parseLastModified(lastModHeader, mtimeHeader string) time.Time {
 	if mtimeHeader == "" {
 		return lastmod
 	}
-	Log := logger.Log
-
 	if len(mtimeHeader) >= 23 {
 		if lastmod, ok = timeParse(mtimeHeader); ok {
 			return lastmod
 		}
-		Log("msg", "too big an mtime "+mtimeHeader+", and not RFC1123-compliant")
+		logger.Info("too big an mtime " + mtimeHeader + ", and not RFC1123-compliant")
 		return lastmod
 	}
 	if qmt, err := strconv.ParseInt(mtimeHeader, 10, 64); err != nil {
-		Log("msg", "cannot parse mtime", "header", mtimeHeader, "error", err)
+		logger.Info("cannot parse mtime", "header", mtimeHeader, "error", err)
 	} else {
 		return time.Unix(qmt, 0)
 	}

@@ -9,7 +9,7 @@ import (
 	"io"
 
 	"github.com/h2non/filetype"
-	"github.com/hashicorp/golang-lru"
+	lru "github.com/hashicorp/golang-lru"
 	"perkeep.org/pkg/sorted"
 	"perkeep.org/pkg/sorted/kvfile"
 )
@@ -53,7 +53,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 	}
 
 	if mc.db, err = kvfile.NewStorage(filename); err != nil {
-		Log("msg", "cannot open/create db", "file", filename, "error", err)
+		logger.Error(err, "open/create db", "file", filename)
 		mc.db = nil
 	}
 	return mc
@@ -88,7 +88,7 @@ func (mc *MimeCache) Set(key, mime string) {
 	mc.mem.Add(key, mime)
 	if mc.db != nil {
 		if err := mc.db.Set(key, mime); err != nil {
-			Log("msg", "error setting", "key", key, "mime", mime, "db", mc.db, "error", err)
+			logger.Error(err, "setting", "key", key, "mime", mime, "db", mc.db)
 		}
 	}
 }

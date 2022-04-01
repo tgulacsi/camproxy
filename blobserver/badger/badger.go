@@ -1,4 +1,4 @@
-// Copyright 2020, 2021 The Perkeep Authors
+// Copyright 2020, 2022 The Perkeep Authors
 //
 // SPDX-License-Identifier: Apache-2.0
 
