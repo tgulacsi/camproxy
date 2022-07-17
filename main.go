@@ -12,7 +12,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/http"
@@ -100,7 +99,7 @@ func Main() error {
 		Exec: func(ctx context.Context, args []string) error {
 			var ref string
 			if len(args) == 0 || args[0] == "" || args[0] == "-" {
-				b, err := ioutil.ReadAll(os.Stdin)
+				b, err := io.ReadAll(os.Stdin)
 				if err != nil {
 					return err
 				}
@@ -265,7 +264,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("error getting uploader to %q: %s", server, err), 500)
 			return
 		}
-		dn, err := ioutil.TempDir("", "camproxy")
+		dn, err := os.MkdirTemp("", "camproxy")
 		if err != nil {
 			http.Error(w, fmt.Sprintf("cannot create temporary directory: %s", err), 500)
 			return
@@ -402,7 +401,7 @@ func saveDirectTo(destDir string, r *http.Request) (filename, mimeType string, e
 	}
 	if fn == "" {
 		logger.Info("Cannot determine filename", "content-disposition", cd)
-		fh, err = ioutil.TempFile(destDir, "file-")
+		fh, err = os.CreateTemp(destDir, "file-")
 	} else {
 		fn = filepath.Join(destDir, safeBaseFn(fn))
 		fh, err = os.Create(fn)

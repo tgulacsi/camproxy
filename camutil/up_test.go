@@ -6,7 +6,6 @@ package camutil
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -15,7 +14,7 @@ import (
 )
 
 func TestNewPermanode(t *testing.T) {
-	tempDir, err := ioutil.TempDir("", "camli-")
+	tempDir, err := os.MkdirTemp("", "camli-")
 	if err != nil {
 		t.Fatalf("TempDir: %v", err)
 	}

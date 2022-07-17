@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -98,7 +97,7 @@ func NewClient(server string) (*client.Client, error) {
 			return retry, err
 		}
 		if resp.Body != nil {
-			b, _ := ioutil.ReadAll(io.LimitReader(resp.Body, 2000))
+			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
 			err = fmt.Errorf("%w: %s", err, string(b))
 		}
 		return retry, err
@@ -248,7 +247,7 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 				rc = struct {
 					io.Reader
 					io.Closer
-				}{r, ioutil.NopCloser(nil)}
+				}{r, io.NopCloser(nil)}
 			} else if errors.Is(err, os.ErrNotExist) {
 				return nil, fmt.Errorf("%v: %w", br, err)
 			} else {

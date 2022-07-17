@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 // Copyright 2013, 2020 Tamás Gulácsi.

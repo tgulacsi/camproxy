@@ -5,7 +5,6 @@
 package camutil
 
 import (
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -28,7 +27,7 @@ func NewBadgerCache(fetcher blob.Fetcher, maxSize int64) (*BadgerCache, error) {
 	}
 	if cacheDir == "" {
 		var err error
-		if cacheDir, err = ioutil.TempDir("", "perkeepcache"); err != nil {
+		if cacheDir, err = os.MkdirTemp("", "perkeepcache"); err != nil {
 			return nil, err
 		}
 	}

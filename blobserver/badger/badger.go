@@ -29,7 +29,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"time"
@@ -77,7 +76,7 @@ func (sto Storage) Fetch(ctx context.Context, br blob.Ref) (io.ReadCloser, uint3
 	return struct {
 		io.Reader
 		io.Closer
-	}{bytes.NewReader(value), ioutil.NopCloser(nil)}, uint32(len(value)), err
+	}{bytes.NewReader(value), io.NopCloser(nil)}, uint32(len(value)), err
 }
 
 func (sto Storage) RemoveBlobs(ctx context.Context, blobs []blob.Ref) error {
@@ -197,7 +196,7 @@ func (sto Storage) ResetStorageGeneration() error {
 }
 
 func (sto Storage) ReceiveBlob(ctx context.Context, br blob.Ref, source io.Reader) (blob.SizedRef, error) {
-	b, err := ioutil.ReadAll(source)
+	b, err := io.ReadAll(source)
 	if err != nil {
 		return blob.SizedRef{Ref: br}, err
 	}

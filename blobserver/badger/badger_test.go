@@ -21,7 +21,6 @@ limitations under the License.
 package badger
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -31,7 +30,7 @@ import (
 
 func TestStorage(t *testing.T) {
 	storagetest.Test(t, func(t *testing.T) (blobserver.Storage, func()) {
-		dn, err := ioutil.TempDir("", "badger-test-")
+		dn, err := os.MkdirTemp("", "badger-test-")
 		if err != nil {
 			t.Fatal(err)
 		}
