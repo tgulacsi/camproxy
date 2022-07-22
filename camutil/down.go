@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -21,7 +20,6 @@ import (
 
 	"github.com/go-logr/logr"
 
-	"github.com/hashicorp/go-retryablehttp"
 	"perkeep.org/pkg/auth"
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver/localdisk"
@@ -31,6 +29,7 @@ import (
 
 var logger = logr.Discard()
 
+// SetLogger sets the package-level logr.Logger
 func SetLogger(lgr logr.Logger) { logger = lgr }
 
 // Downloader is the struct for downloading file/dir blobs
@@ -87,22 +86,7 @@ func NewClient(server string) (*client.Client, error) {
 	if c, err = client.New(opts...); err != nil {
 		return nil, err
 	}
-	rc := retryablehttp.NewClient()
-	clcl := *c.HTTPClient()
-	rc.HTTPClient = &clcl
-	rc.Logger = nil
-	rc.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
-		retry, err := retryablehttp.ErrorPropagatedRetryPolicy(ctx, resp, err)
-		if !retry || err == nil {
-			return retry, err
-		}
-		if resp.Body != nil {
-			b, _ := io.ReadAll(io.LimitReader(resp.Body, 2000))
-			err = fmt.Errorf("%w: %s", err, string(b))
-		}
-		return retry, err
-	}
-	c.SetHTTPClient(rc.StandardClient())
+	c.SetHTTPClient(c.HTTPClient())
 	if !authIncluded {
 		if err = c.SetupAuth(); err != nil {
 			return nil, err

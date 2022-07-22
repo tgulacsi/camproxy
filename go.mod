@@ -14,7 +14,6 @@ require (
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/h2non/filetype v1.1.3
-	github.com/hashicorp/go-retryablehttp v0.7.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/hjfreyer/taglib-go v0.0.0-20201229170211-d150ea929c10 // indirect
 	github.com/nf/cr2 v0.0.0-20180623103828-4699471a17ed // indirect
@@ -49,7 +48,6 @@ require (
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/flatbuffers v2.0.6+incompatible // indirect
-	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/klauspost/compress v1.15.1 // indirect
 	github.com/outcaste-io/ristretto v0.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
