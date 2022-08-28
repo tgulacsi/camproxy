@@ -45,6 +45,7 @@ type Uploader struct {
 // ErrFileIsEmpty is the error for zero length files
 var ErrFileIsEmpty = errors.New("file is empty")
 
+// nosemgrep
 var cachedUploader = make(map[string]*Uploader, 1)
 var cachedUploaderMtx = new(sync.Mutex)
 
@@ -463,6 +464,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			time.Sleep(time.Duration(i) * time.Second)
 		}
 		logger.Info(cmdPkPut, "args", args)
+		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 		c := exec.CommandContext(ctx, cmdPkPut, args...)
 		c.Dir = dir
 		c.Env = u.env

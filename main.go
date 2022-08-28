@@ -7,7 +7,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -272,7 +272,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		var paraSource, paraDest string
 		defer func() {
 			if paraSource != "" && paraDest != "" { // save at last
-				os.MkdirAll(filepath.Dir(paraDest), 0700)
+				// nosemgrep: go.lang.correctness.permissions.file_permission.incorrect-default-permission
+				_ = os.MkdirAll(filepath.Dir(paraDest), 0700)
 				logger.Info("Paranoid copying", "src", paraSource, "dst", paraDest)
 				if err = camutil.LinkOrCopy(paraSource, paraDest); err != nil {
 					logger.Info("copying", "src", paraSource, "dst", paraDest, "error", err)
@@ -379,6 +380,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Add("Content-Length", strconv.Itoa(len(b.Bytes())))
 		w.WriteHeader(201)
+		// nosemgrep: go.lang.security.audit.xss.no-direct-write-to-responsewriter.no-direct-write-to-responsewriter
 		w.Write(b.Bytes())
 	default:
 		http.Error(w, "Method must be GET/POST", http.StatusMethodNotAllowed)
@@ -504,7 +506,7 @@ func safeBaseFn(filename string) string {
 		if i >= 0 {
 			ext = filename[i:]
 		}
-		hsh := sha1.New()
+		hsh := sha256.New()
 		_, _ = io.WriteString(hsh, filename)
 		hshS := base64.URLEncoding.EncodeToString(hsh.Sum(nil))
 		filename = filename[:255-1-len(hshS)-len(ext)] + "-" + ext

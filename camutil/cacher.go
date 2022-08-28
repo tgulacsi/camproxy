@@ -19,6 +19,7 @@ func NewBadgerCache(fetcher blob.Fetcher, maxSize int64) (*BadgerCache, error) {
 	if dn, err := os.UserCacheDir(); err == nil {
 		cacheDir = filepath.Join(dn, "perkeep", "blobs")
 		if fi, err := os.Stat(cacheDir); err != nil || !fi.Mode().IsDir() {
+			// nosemgrep: go.lang.correctness.permissions.file_permission.incorrect-default-permission
 			if err := os.Mkdir(cacheDir, 0700); err != nil {
 				log.Printf("Warning: failed to make %s: %v; using tempdir instead", cacheDir, err)
 				cacheDir = ""

@@ -28,6 +28,7 @@ func SetupBasicAuthChecker(handler http.HandlerFunc, camliAuth string) http.Hand
 		return handler
 	}
 	username := parts[1]
+	// nosemgrep: go.lang.security.audit.crypto.bad_imports.insecure-module-used go.lang.security.audit.crypto.use_of_weak_crypto.use-of-sha1
 	hsh := sha1.New()
 	if _, err := io.WriteString(hsh, parts[2]); err != nil {
 		logger.Error(err, "hashing user:passw")

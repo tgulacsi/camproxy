@@ -97,6 +97,7 @@ func NewClient(server string) (*client.Client, error) {
 }
 
 var (
+	// nosemgrep: trailofbits.go.iterate-over-empty-map.iterate-over-empty-collection
 	cachedDownloader    = make(map[string]*Downloader, 1)
 	cachedDownloaderMtx sync.Mutex
 )
@@ -113,11 +114,11 @@ func NewDownloader(server string, noCache bool) (*Downloader, error) {
 		return down, nil
 	}
 
-	down = new(Downloader)
-	var err error
-	if down.cl, err = NewClient(server); err != nil {
+	cl, err := NewClient(server)
+	if err != nil {
 		return nil, err
 	}
+	down = &Downloader{cl: cl}
 
 	if strings.HasPrefix(server, "file://") {
 		down.Fetcher = down.cl
@@ -128,11 +129,12 @@ func NewDownloader(server string, noCache bool) (*Downloader, error) {
 	if noCache {
 		down.Fetcher = down.cl
 	} else {
-		down.Fetcher, err = NewBadgerCache(down.cl, 512<<20)
+		bc, err := NewBadgerCache(down.cl, 512<<20)
 		if err != nil {
 			return nil, fmt.Errorf("setup local disk cache: %w", err)
 		}
-		logger.V(1).Info("Using temp blob cache directory " + down.Fetcher.(*BadgerCache).Root)
+		logger.V(1).Info("Using temp blob cache directory " + bc.Root)
+		down.Fetcher = bc
 	}
 	if server != "" {
 		down.args = []string{"-server=" + server}
@@ -252,7 +254,8 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 			args = append(args, "-insecure=true")
 		}
 		args = append(args, br.String())
-		c := exec.Command(cmdPkGet, args...)
+		// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+		c := exec.CommandContext(ctx, cmdPkGet, args...)
 		var errBuf bytes.Buffer
 		c.Stderr = &errBuf
 		if rc, err = c.StdoutPipe(); err != nil {

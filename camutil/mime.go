@@ -43,20 +43,19 @@ type MimeCache struct {
 
 // NewMimeCache creates a new mime cache - in-memory + on-disk (persistent)
 func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
-	mc := new(MimeCache)
 	if maxMemCacheSize <= 0 {
 		maxMemCacheSize = DefaultMaxMemMimeCacheSize
 	}
-	var err error
-	if mc.mem, err = lru.New2Q(maxMemCacheSize); err != nil {
+	mem, err := lru.New2Q(maxMemCacheSize)
+	if err != nil {
 		panic(err)
 	}
 
-	if mc.db, err = kvfile.NewStorage(filename); err != nil {
+	db, err := kvfile.NewStorage(filename)
+	if err != nil {
 		logger.Error(err, "open/create db", "file", filename)
-		mc.db = nil
 	}
-	return mc
+	return &MimeCache{mem: mem, db: db}
 }
 
 // Close closes the probably open disk db (kv)

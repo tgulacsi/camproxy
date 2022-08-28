@@ -27,9 +27,9 @@ package badger
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"io"
-	"math/rand"
 	"os"
 	"time"
 
@@ -53,8 +53,9 @@ func NewManaged(db *badgerdb.DB, prefix string) Storage {
 func New(root, prefix string) (Storage, error) {
 	db, err := badgerdb.Open(badgerdb.DefaultOptions(root).WithLogger(nilLogger{}))
 	if err != nil {
-		os.RemoveAll(root)
-		os.MkdirAll(root, 0755)
+		_ = os.RemoveAll(root)
+		// nosemgrep: go.lang.correctness.permissions.file_permission.incorrect-default-permission
+		_ = os.MkdirAll(root, 0750)
 		if db, err = badgerdb.Open(badgerdb.DefaultOptions(root)); err != nil {
 			return Storage{}, err
 		}

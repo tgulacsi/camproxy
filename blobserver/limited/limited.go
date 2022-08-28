@@ -63,11 +63,11 @@ type EvictPolicy interface {
 // LRUEvictPolicy returns a simple LRU based eviction policy.
 func LRUEvictPolicy(size int) lruPolicy {
 	var lp lruPolicy
-	var err error
-	lp.lru, err = simplelru.NewLRU(size, func(key, value interface{}) { lp.lastEvicted = key.(string) })
+	lru, err := simplelru.NewLRU(size, func(key, value interface{}) { lp.lastEvicted = key.(string) })
 	if err != nil {
 		panic(err)
 	}
+	lp.lru = lru
 	return lp
 }
 
