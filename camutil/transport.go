@@ -15,7 +15,7 @@ import (
 
 type retryTransport struct {
 	retry.Strategy
-	tr *http.Transport
+	tr http.RoundTripper
 }
 
 func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {

@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -90,7 +89,7 @@ func NewClient(server string) (*client.Client, error) {
 		return nil, err
 	}
 	cl := c.HTTPClient()
-	cl.Transport = retryTransport{tr: cl.Transport.(*http.Transport), Strategy: retry.Strategy{
+	cl.Transport = retryTransport{tr: cl.Transport, Strategy: retry.Strategy{
 		Delay: 100 * time.Millisecond, MaxDelay: 5 * time.Second,
 		Factor: 1.5, MaxCount: 10,
 		MaxDuration: 30 * time.Second,
