@@ -25,6 +25,7 @@ require (
 	github.com/go-logr/logr v1.2.3
 	github.com/go-logr/zerologr v1.2.2
 	github.com/outcaste-io/badger/v3 v3.2202.0
+	github.com/rogpeppe/retry v0.1.0
 	github.com/rs/zerolog v1.27.0
 	perkeep.org v0.0.0-20220715145315-d6d7a8e2b8b8
 )

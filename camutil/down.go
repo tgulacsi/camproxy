@@ -12,13 +12,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/rogpeppe/retry"
 
 	"perkeep.org/pkg/auth"
 	"perkeep.org/pkg/blob"
@@ -86,7 +89,13 @@ func NewClient(server string) (*client.Client, error) {
 	if c, err = client.New(opts...); err != nil {
 		return nil, err
 	}
-	c.SetHTTPClient(c.HTTPClient())
+	cl := c.HTTPClient()
+	cl.Transport = retryTransport{tr: cl.Transport.(*http.Transport), Strategy: retry.Strategy{
+		Delay: 100 * time.Millisecond, MaxDelay: 5 * time.Second,
+		Factor: 1.5, MaxCount: 10,
+		MaxDuration: 30 * time.Second,
+	}}
+	c.SetHTTPClient(cl)
 	if !authIncluded {
 		if err = c.SetupAuth(); err != nil {
 			return nil, err
