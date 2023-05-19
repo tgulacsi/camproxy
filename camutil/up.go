@@ -1,4 +1,4 @@
-// Copyright 2013, 2022 Tamás Gulácsi.
+// Copyright 2013, 2023 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -78,7 +78,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 	if strings.HasPrefix(server, "file://") {
 		recv, err := localdisk.New(server[7:])
 		if err != nil {
-			logger.Error(err, "localdisk.New", "server", server)
+			logger.Error("localdisk.New", "server", server, "error", err)
 			return nil
 		}
 		u = &Uploader{
@@ -261,7 +261,7 @@ func (u *Uploader) UploadFileLazyAttr(
 
 	filteredAttrs["camliContent"] = content.String()
 	if perma, err = u.NewPermanode(ctx, filteredAttrs); err != nil {
-		logger.Error(err, "NewPermanode", "attrs", filteredAttrs)
+		logger.Error("NewPermanode", "attrs", filteredAttrs, "error", err)
 	}
 	return content, perma, nil
 }
@@ -285,7 +285,7 @@ func (u *Uploader) UploadReaderInfoLazyAttr(
 	}
 	filteredAttrs["camliContent"] = content.String()
 	if perma, err = u.NewPermanode(ctx, filteredAttrs); err != nil {
-		logger.Error(err, "NewPermanode", "attrs", filteredAttrs)
+		logger.Error("NewPermanode", "attrs", filteredAttrs, "error", err)
 	}
 	return content, perma, nil
 }
@@ -310,7 +310,7 @@ func (u *Uploader) NewPermanode(ctx context.Context, attrs map[string]string) (b
 	if u.Client != nil {
 		pRes, err := u.Client.UploadNewPermanode(ctx)
 		if err != nil {
-			logger.Error(err, "UploadNewPermanode")
+			logger.Error("UploadNewPermanode", "error", err)
 			return blob.Ref{}, err
 		}
 		if len(attrs) > 0 {
@@ -321,7 +321,7 @@ func (u *Uploader) NewPermanode(ctx context.Context, attrs map[string]string) (b
 	if u.Signer != nil { //nolint:govet
 		signed, err := schema.NewUnsignedPermanode().Sign(ctx, u.Signer)
 		if err != nil {
-			logger.Error(err, "Sign", "signer", u.Signer)
+			logger.Error("Sign", "signer", u.Signer, "error", err)
 			return blob.Ref{}, err
 		}
 		return blob.RefFromString(signed), err
@@ -358,7 +358,7 @@ func (u *Uploader) SetPermanodeAttrs(ctx context.Context, perma blob.Ref, attrs 
 	}
 	for k, v := range attrs {
 		if _, err := setAttr(k, v); err != nil {
-			logger.Error(err, "SetPermanodeAttrs", "key", k, "value", v, "perma", perma.String())
+			logger.Error("SetPermanodeAttrs", "key", k, "value", v, "perma", perma.String(), "error", err)
 			return err
 		}
 	}
@@ -425,7 +425,7 @@ func (u *Uploader) UploadFileExtLazyAttr(ctx context.Context, path string, attrs
 	content, perma, err = u.UploadFileExt(ctx, path, len(filteredAttrs) > 0)
 	if perma.Valid() {
 		if err := u.SetPermanodeAttrs(ctx, perma, filteredAttrs); err != nil {
-			logger.Error(err, "SetPermanodeAttrs", "perma", perma.String(), "attrs", filteredAttrs)
+			logger.Error("SetPermanodeAttrs", "perma", perma.String(), "attrs", filteredAttrs, "error", err)
 		}
 	}
 	return content, perma, err
@@ -480,7 +480,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 		}
 		if err != nil {
 			lastErr = fmt.Errorf("call %s %q: %s: %w", cmdPkPut, args, errbuf.String(), err)
-			logger.Error(lastErr, cmdPkPut, "args", args)
+			logger.Error(cmdPkPut, "args", args, "error", lastErr)
 			continue
 		}
 		// the last line is the permanode ref, the first is the content
@@ -502,7 +502,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 				break
 			}
 			if down, err = NewDownloader(u.server, true); err != nil {
-				logger.Error(err, "cannot get downloader for checking uploads")
+				logger.Error("cannot get downloader for checking uploads", "error", err)
 				break
 			}
 		}
@@ -511,7 +511,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			blb, err := schema.BlobFromReader(content, rc)
 			rc.Close()
 			if err != nil {
-				logger.Error(err, "error getting back blob", "blob", content)
+				logger.Error("error getting back blob", "blob", content, "error", err)
 			} else {
 				if len(blb.ByteParts()) > 0 {
 					break
@@ -531,7 +531,7 @@ func RefToBase64(br blob.Ref) string {
 	}
 	data, err := br.MarshalBinary()
 	if err != nil {
-		logger.Error(err, "error marshaling", "blob", br)
+		logger.Error("error marshaling", "blob", br, "error", err)
 		return ""
 	}
 	var buf strings.Builder
@@ -553,13 +553,13 @@ func newDummySigner() *schema.Signer { //nolint:deadcode
 	} {
 		fh, err := os.Open(os.ExpandEnv(fn))
 		if err != nil {
-			logger.Error(err, "open", "file", fn)
+			logger.Error("open", "file", fn, "error", err)
 			continue
 		}
 		el, err := openpgp.ReadKeyRing(fh)
 		fh.Close()
 		if err != nil {
-			logger.Error(err, "ReadKeyRing", "file", fh.Name())
+			logger.Error("ReadKeyRing", "file", fh.Name(), "error", err)
 			continue
 		}
 		for _, e := range el {
@@ -578,7 +578,7 @@ func newDummySigner() *schema.Signer { //nolint:deadcode
 		if privateKeySource, err = openpgp.NewEntity(
 			"camutil", "test", "camutil@camlistore.org", nil,
 		); err != nil {
-			logger.Error(err, "openpgp.NewEntity")
+			logger.Error("openpgp.NewEntity", "error", err)
 			return nil
 		}
 	}
@@ -586,11 +586,11 @@ func newDummySigner() *schema.Signer { //nolint:deadcode
 	hsh := blob.RefFromString("").Hash()
 	w, err := armor.Encode(io.MultiWriter(&buf, hsh), "PGP PUBLIC KEY BLOCK", nil)
 	if err != nil {
-		logger.Error(err, "armor")
+		logger.Error("armor", "error", err)
 		return nil
 	}
 	if err = privateKeySource.PrimaryKey.Serialize(w); err != nil {
-		logger.Error(err, "serialize")
+		logger.Error("serialize", "error", err)
 	}
 	_ = w.Close()
 
@@ -599,7 +599,7 @@ func newDummySigner() *schema.Signer { //nolint:deadcode
 
 	signer, err := schema.NewSigner(pubKeyRef, armoredPubKey, privateKeySource)
 	if err != nil {
-		logger.Error(err, "newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource)
+		logger.Error("newDummySigner", "pubkey", pubKeyRef, "pubkey", armoredPubKey, "privatekey", privateKeySource, "error", err)
 		return nil
 	}
 	return signer

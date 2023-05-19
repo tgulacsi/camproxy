@@ -1,4 +1,4 @@
-// Copyright 2013, 2022 Tamás Gulácsi.
+// Copyright 2013, 2023 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -19,7 +19,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
+	"golang.org/x/exp/slog"
+
 	"github.com/rogpeppe/retry"
 
 	"perkeep.org/pkg/auth"
@@ -29,10 +30,10 @@ import (
 	"perkeep.org/pkg/schema"
 )
 
-var logger = logr.Discard()
+var logger *slog.Logger
 
-// SetLogger sets the package-level logr.Logger
-func SetLogger(lgr logr.Logger) { logger = lgr }
+// SetLogger sets the package-level *slog.Logger
+func SetLogger(lgr *slog.Logger) { logger = lgr }
 
 // Downloader is the struct for downloading file/dir blobs
 type Downloader struct {
@@ -141,7 +142,7 @@ func NewDownloader(server string, noCache bool) (*Downloader, error) {
 		if err != nil {
 			return nil, fmt.Errorf("setup local disk cache: %w", err)
 		}
-		logger.V(1).Info("Using temp blob cache directory " + bc.Root)
+		logger.Debug("Using temp blob cache directory " + bc.Root)
 		down.Fetcher = bc
 	}
 	if server != "" {
@@ -245,7 +246,7 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 			} else if errors.Is(err, os.ErrNotExist) {
 				return nil, fmt.Errorf("%v: %w", br, err)
 			} else {
-				logger.Error(err, "blob.FromFetcher", "br", br)
+				logger.Error("blob.FromFetcher", "br", br, "error", err)
 			}
 		}
 		if err == nil && rc != nil {
@@ -292,7 +293,7 @@ func (down *Downloader) Start(ctx context.Context, contents bool, items ...blob.
 func (down *Downloader) Save(ctx context.Context, destDir string, contents bool, items ...blob.Ref) error {
 	for _, br := range items {
 		if err := smartFetch(ctx, down.Fetcher, destDir, br); err != nil {
-			logger.Error(err, "Save")
+			logger.Error("Save", "error", err)
 			return err
 		}
 	}

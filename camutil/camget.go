@@ -1,4 +1,4 @@
-// Copyright 2013, 2020 Tamás Gulácsi.
+// Copyright 2013, 2023 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -48,7 +48,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 	b, ok := sniffer.SchemaBlob()
 
 	if !ok {
-		logger.V(1).Info("Fetching opaque data", "blob", br, "destination", targ)
+		logger.Debug("Fetching opaque data", "blob", br, "destination", targ)
 
 		// opaque data - put it in a file
 		f, err := os.Create(targ)
@@ -68,12 +68,12 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 	switch b.Type() {
 	case "directory":
 		dir := filepath.Join(targ, b.FileName())
-		logger.V(1).Info("Fetching directory", "blob", br, "destination", dir)
+		logger.Debug("Fetching directory", "blob", br, "destination", dir)
 		if err := os.MkdirAll(dir, b.FileMode()); err != nil {
 			return fmt.Errorf("mkdirall %q: %w", dir, err)
 		}
 		if err := setFileMeta(dir, b); err != nil {
-			logger.Error(err, "setFileMeta")
+			logger.Error("setFileMeta", "error", err)
 		}
 		entries, ok := b.DirectoryEntries()
 		if !ok {
@@ -81,7 +81,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 		return smartFetch(ctx, src, dir, entries)
 	case "static-set":
-		logger.V(1).Info("Fetching directory entries", "blob", br, "destination", targ)
+		logger.Debug("Fetching directory entries", "blob", br, "destination", targ)
 
 		// directory entries
 		const numWorkers = 10
@@ -122,11 +122,11 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		name := filepath.Join(targ, b.FileName())
 
 		if fi, err := os.Stat(name); err == nil && fi.Size() == fr.Size() {
-			logger.V(1).Info("Skipping (already exists).", "file", name)
+			logger.Debug("Skipping (already exists).", "file", name)
 			return nil
 		}
 
-		logger.V(1).Info("Writing", "blob", br, "destination", name)
+		logger.Debug("Writing", "blob", br, "destination", name)
 
 		f, err := os.Create(name)
 		if err != nil {
@@ -137,7 +137,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 			return fmt.Errorf("copy %s to %s: %w", br, name, err)
 		}
 		if err := setFileMeta(name, b); err != nil {
-			logger.Error(err, "setFileMeta")
+			logger.Error("setFileMeta", "error", err)
 		}
 		return nil
 	case "symlink":
@@ -154,7 +154,7 @@ func smartFetch(ctx context.Context, src blob.Fetcher, targ string, br blob.Ref)
 		}
 		name := filepath.Join(targ, sl.FileName())
 		if _, err := os.Lstat(name); err == nil {
-			logger.V(1).Info("Skipping creating symbolic link " + name + ": A file with that name exists")
+			logger.Debug("Skipping creating symbolic link " + name + ": A file with that name exists")
 			return nil
 		}
 		target := sl.SymlinkTargetString()

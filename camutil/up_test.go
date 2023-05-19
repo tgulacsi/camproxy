@@ -1,4 +1,4 @@
-// Copyright 2013, 2020 Tamás Gulácsi.
+// Copyright 2013, 2023 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-logr/logr/testr"
+	"github.com/UNO-SOFT/zlog/v2"
 )
 
 func TestNewPermanode(t *testing.T) {
@@ -20,7 +20,7 @@ func TestNewPermanode(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	logger = testr.New(t)
+	logger = zlog.NewT(t).SLog()
 
 	u := NewUploader("file://"+tempDir, true, true)
 	defer u.Close()

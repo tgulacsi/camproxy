@@ -1,4 +1,4 @@
-// Copyright 2013, 2020 Tamás Gulácsi.
+// Copyright 2013, 2023 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -53,7 +53,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 
 	db, err := kvfile.NewStorage(filename)
 	if err != nil {
-		logger.Error(err, "open/create db", "file", filename)
+		logger.Error("open/create db", "file", filename, "error", err)
 	}
 	return &MimeCache{mem: mem, db: db}
 }
@@ -87,7 +87,7 @@ func (mc *MimeCache) Set(key, mime string) {
 	mc.mem.Add(key, mime)
 	if mc.db != nil {
 		if err := mc.db.Set(key, mime); err != nil {
-			logger.Error(err, "setting", "key", key, "mime", mime, "db", mc.db)
+			logger.Error("setting", "key", key, "mime", mime, "db", mc.db, "error", err)
 		}
 	}
 }

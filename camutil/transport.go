@@ -1,4 +1,4 @@
-// Copyright 2022 Tamás Gulácsi. All rights reserved.
+// Copyright 2022, 2023 Tamás Gulácsi. All rights reserved.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-logr/logr"
+	"github.com/UNO-SOFT/zlog/v2"
 	"github.com/rogpeppe/retry"
 )
 
@@ -29,7 +29,7 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		ctx, cancel = context.WithTimeout(req.Context(), dur)
 		defer cancel()
 	}
-	logger := logr.FromContextOrDiscard(ctx)
+	logger := zlog.SFromContext(ctx)
 	var resp *http.Response
 	var err error
 	for iter := tr.Strategy.Start(); iter.Next(ctx.Done()); {
@@ -44,7 +44,7 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if req.Body != nil {
 			var retryErr error
 			if req.Body, retryErr = req.GetBody(); retryErr != nil {
-				logger.Error(retryErr, "retry GetBody")
+				logger.Error("retry GetBody", "error", retryErr)
 				return resp, err
 			}
 		}

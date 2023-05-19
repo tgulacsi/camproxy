@@ -32,16 +32,14 @@ import (
 	"github.com/peterbourgon/ff/v3/ffcli"
 	"github.com/tgulacsi/camproxy/camutil"
 
-	"github.com/go-logr/zerologr"
-	"github.com/rs/zerolog"
+	"github.com/UNO-SOFT/zlog/v2"
 )
 
-var zl = zerolog.New(os.Stderr)
-var logger = zerologr.New(&zl)
+var verbose zlog.VerboseVar
+var logger = zlog.NewLogger(zlog.MaybeConsoleHandler(&verbose, os.Stderr)).SLog()
 
 var (
 	fs                = flag.NewFlagSet("serve", flag.ContinueOnError)
-	flagVerbose       = fs.Bool("v", false, "verbose logging")
 	flagInsecureTLS   = fs.Bool("k", camutil.InsecureTLS, "allow insecure TLS")
 	flagSkipIrregular = fs.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
 	//flagServer      = fs.String("server", ":3179", "Camlistore server address")
@@ -57,12 +55,13 @@ var (
 
 func main() {
 	if err := Main(); err != nil {
-		logger.Error(err, "ERROR")
+		logger.Error("ERROR", "error", err)
 		os.Exit(1)
 	}
 }
 
 func Main() error {
+	fs.Var(&verbose, "v", "verbose logging")
 	client.AddFlags() // add -server flag
 
 	serveCmd := ffcli.Command{Name: "serve", FlagSet: fs,
@@ -181,8 +180,8 @@ func Main() error {
 		return err
 	}
 
-	if *flagVerbose {
-		camutil.SetLogger(logger.WithValues("lib", "camutil"))
+	if verbose > 0 {
+		camutil.SetLogger(logger.WithGroup("camutil"))
 	}
 
 	if *flagUseSHA1 {
