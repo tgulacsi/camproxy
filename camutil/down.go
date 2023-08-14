@@ -12,14 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/exp/slog"
 
 	"github.com/rogpeppe/retry"
 
