@@ -24,7 +24,7 @@ require (
 
 require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230717121422-5aa5874ade95
-	github.com/UNO-SOFT/zlog v0.7.6
+	github.com/UNO-SOFT/zlog v0.7.7
 	github.com/outcaste-io/badger/v3 v3.2202.0
 	github.com/rogpeppe/retry v0.1.0
 	perkeep.org v0.0.0-20230220131605-498fcaa7c341
