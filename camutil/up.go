@@ -517,7 +517,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 					break
 				}
 				lastErr = fmt.Errorf("blob[%s].parts is empty", content)
-				logger.Info("blob", blb.JSON())
+				logger.Info("blob", "json", blb.JSON())
 			}
 		}
 	}
