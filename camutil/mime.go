@@ -8,8 +8,8 @@ import (
 	"bytes"
 	"io"
 
-	"github.com/h2non/filetype"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/zRedShift/mimemagic"
 	"perkeep.org/pkg/sorted"
 	"perkeep.org/pkg/sorted/kvfile"
 )
@@ -27,8 +27,11 @@ func MIMETypeFromReader(r io.Reader) (mime string, reader io.Reader) {
 	}
 	var buf bytes.Buffer
 	_, err := io.Copy(&buf, io.LimitReader(r, 1024))
-	mt, _ := filetype.Match(buf.Bytes())
-	mime = mt.MIME.Type + "/" + mt.MIME.Subtype
+	var name string
+	if namer, ok := r.(interface{ Name() string }); ok {
+		name = namer.Name()
+	}
+	mime = mimemagic.Match(buf.Bytes(), name).MediaType()
 	if err != nil {
 		return mime, io.MultiReader(bytes.NewReader(buf.Bytes()), errReader{err})
 	}
@@ -94,8 +97,7 @@ func (mc *MimeCache) Set(key, mime string) {
 
 // MatchMime checks mime from the first 1024 bytes
 func MatchMime(_ string, data []byte) string {
-	mt, _ := filetype.Match(data)
-	return mt.MIME.Type + "/" + mt.MIME.Subtype
+	return mimemagic.Match(data, "").MediaType()
 }
 
 type errReader struct {
