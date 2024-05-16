@@ -20,7 +20,7 @@ limitations under the License.
 
 /*
 Package badger implements the blobserver interface by storing each blob
-in a outcaste-io/badger database.
+in a dgraph-io/badger database.
 */
 package badger
 
@@ -36,7 +36,7 @@ import (
 	"perkeep.org/pkg/blob"
 	"perkeep.org/pkg/blobserver"
 
-	badgerdb "github.com/outcaste-io/badger/v3"
+	badgerdb "github.com/dgraph-io/badger/v4"
 )
 
 var _ = blobserver.Storage(Storage{})

@@ -29,8 +29,8 @@ import (
 )
 
 func TestStorage(t *testing.T) {
-	storagetest.Test(t, func(t *testing.T) (blobserver.Storage, func()) {
+	storagetest.Test(t, func(t *testing.T) blobserver.Storage {
 		sto := memory.NewCache(16 << 20)
-		return NewStorage(sto, 100), func() {}
+		return NewStorage(sto, 100)
 	})
 }

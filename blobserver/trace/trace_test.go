@@ -30,13 +30,13 @@ import (
 )
 
 func TestStorage(t *testing.T) {
-	storagetest.Test(t, func(t *testing.T) (blobserver.Storage, func()) {
+	storagetest.Test(t, func(t *testing.T) blobserver.Storage {
 		sto := memory.NewCache(16 << 20)
 		return Storage{
 			Storage: sto,
 			OnFetch: func(blobs []blob.SizedRef, err error) {
 				t.Log("Fetch", blobs, err)
 			},
-		}, func() {}
+		}
 	})
 }

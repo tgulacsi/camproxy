@@ -29,7 +29,7 @@ import (
 )
 
 func TestStorage(t *testing.T) {
-	storagetest.Test(t, func(t *testing.T) (blobserver.Storage, func()) {
+	storagetest.Test(t, func(t *testing.T) blobserver.Storage {
 		dn, err := os.MkdirTemp("", "badger-test-")
 		if err != nil {
 			t.Fatal(err)
@@ -38,9 +38,6 @@ func TestStorage(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return sto, func() {
-			sto.Close()
-			os.RemoveAll(dn)
-		}
+		return sto
 	})
 }
