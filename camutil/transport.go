@@ -6,7 +6,6 @@ package camutil
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"io"
 	"log/slog"
@@ -22,18 +21,26 @@ type retryTransport struct {
 	tr http.RoundTripper
 }
 
-var ErrEmptyResponse = errors.New("empty resonse")
+var (
+	ErrEmptyResponse = errors.New("empty resonse")
+
+	defaultStrategy = retry.Strategy{
+		Delay: 100 * time.Millisecond, MaxDelay: 3 * time.Second,
+		Factor: 1.5, MaxCount: 3,
+		MaxDuration: 10 * time.Second,
+	}
+)
 
 func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
-	dur := tr.Strategy.MaxDuration
-	if dl, _ := ctx.Deadline(); !dl.IsZero() {
-		dur = time.Until(dl) * 9 / 10
+	strategy := tr.Strategy
+	if strategy == (retry.Strategy{}) {
+		strategy = defaultStrategy
 	}
-	if dur > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(req.Context(), dur)
-		defer cancel()
+	if dl, _ := ctx.Deadline(); !dl.IsZero() {
+		if dur := time.Until(dl) * 9 / 10; dur < strategy.MaxDuration {
+			strategy.MaxDuration = dur
+		}
 	}
 	if req.Body != nil && req.GetBody == nil {
 		var buf bytes.Buffer
@@ -52,7 +59,7 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	logger := zlog.SFromContext(ctx)
 	var resp *http.Response
 	var err error
-	for iter := tr.Strategy.Start(); ; {
+	for iter := strategy.Start(); ; {
 		resp, err = tr.tr.RoundTrip(req)
 		if logger != nil && logger.Enabled(ctx, slog.LevelDebug) {
 			logger.Debug("RoundTrip", "url", req.URL.String(), "resp", resp, "error", err)

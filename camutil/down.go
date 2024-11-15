@@ -18,9 +18,6 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
-	"time"
-
-	"github.com/rogpeppe/retry"
 
 	"perkeep.org/pkg/auth"
 	"perkeep.org/pkg/blob"
@@ -106,11 +103,7 @@ func NewClient(server string, clientOpts ...Option) (*client.Client, error) {
 
 	if options.UseRetryTransport {
 		cl := c.HTTPClient()
-		cl.Transport = retryTransport{tr: cl.Transport, Strategy: retry.Strategy{
-			Delay: 100 * time.Millisecond, MaxDelay: 5 * time.Second,
-			Factor: 1.5, MaxCount: 10,
-			MaxDuration: 30 * time.Second,
-		}}
+		cl.Transport = retryTransport{tr: cl.Transport, Strategy: defaultStrategy}
 		c.SetHTTPClient(cl)
 	}
 	if !authIncluded {
