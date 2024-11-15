@@ -22,7 +22,7 @@ func TestNewPermanode(t *testing.T) {
 
 	logger = zlog.NewT(t).SLog()
 
-	u := NewUploader("file://"+tempDir, true, true)
+	u := NewUploader("file://"+tempDir, WithCapCtime(true), WithSkipHaveCache(true))
 	defer u.Close()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

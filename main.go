@@ -594,11 +594,14 @@ func (w *respWriter) Close() (err error) {
 }
 
 func getUploader() (*camutil.Uploader, error) {
-	return camutil.NewUploader(server, *flagCapCtime, *flagSkipHaveCache), nil
+	return camutil.NewUploader(server,
+		camutil.WithCapCtime(*flagCapCtime),
+		camutil.WithSkipHaveCache(*flagSkipHaveCache)), nil
 }
 
 func getDownloader() (*camutil.Downloader, error) {
-	return camutil.NewDownloader(server, *flagNoCache)
+	return camutil.NewDownloader(server,
+		camutil.WithNoCache(*flagNoCache))
 }
 
 func getParanoidPath(br blob.Ref) string {

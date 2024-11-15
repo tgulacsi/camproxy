@@ -66,8 +66,10 @@ func Close() error {
 }
 
 // NewUploader returns a new uploader for uploading files to the given server
-func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
-	key := fmt.Sprintf("%q\t%t\t%t", server, capCtime, skipHaveCache)
+func NewUploader(server string, options ...Option) *Uploader {
+	var opts clientOptions
+	opts.apply(options...)
+	key := fmt.Sprintf("%q\t%t\t%t", server, opts.CapCtime, opts.SkipHaveCache)
 	cachedUploaderMtx.Lock()
 	defer cachedUploaderMtx.Unlock()
 	u, ok := cachedUploader[key]
@@ -84,14 +86,14 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		u = &Uploader{
 			server:        server,
 			gate:          make(chan struct{}, maxProcs),
-			skipHaveCache: skipHaveCache,
+			skipHaveCache: opts.SkipHaveCache,
 			StatReceiver:  recv,
 			Signer:        newDummySigner(),
 		}
 		cachedUploader[key] = u
 		return u
 	}
-	c, err := NewClient(server)
+	c, err := NewClient(server, options...)
 	if err != nil || c == nil {
 		logger.Info("NewClient", "server", server, "error", err)
 		return nil
@@ -101,7 +103,7 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		args:          make([]string, 1, 2),
 		opts:          make([]string, 0, 3),
 		gate:          make(chan struct{}, maxProcs),
-		skipHaveCache: skipHaveCache,
+		skipHaveCache: opts.SkipHaveCache,
 		Client:        c,
 		StatReceiver:  c,
 	}
@@ -110,11 +112,11 @@ func NewUploader(server string, capCtime bool, skipHaveCache bool) *Uploader {
 		u.args = append(u.args, "-server="+server)
 	}
 	needDebugEnv := false
-	if skipHaveCache {
+	if opts.SkipHaveCache {
 		u.opts = append(u.opts, "-havecache=false", "-statcache=false")
 		needDebugEnv = true
 	}
-	if capCtime {
+	if opts.CapCtime {
 		u.opts = append(u.opts, "-capctime")
 		needDebugEnv = true
 	}
@@ -501,7 +503,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			if i > 0 {
 				break
 			}
-			if down, err = NewDownloader(u.server, true); err != nil {
+			if down, err = NewDownloader(u.server, WithNoCache(true)); err != nil {
 				logger.Error("cannot get downloader for checking uploads", "error", err)
 				break
 			}

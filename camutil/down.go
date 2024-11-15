@@ -46,7 +46,9 @@ var (
 type Option func(*clientOptions)
 
 type clientOptions struct {
-	UseRetryTransport bool
+	UseRetryTransport      bool
+	CapCtime               bool
+	NoCache, SkipHaveCache bool
 }
 
 func (c *clientOptions) apply(opts ...Option) {
@@ -55,6 +57,9 @@ func (c *clientOptions) apply(opts ...Option) {
 	}
 }
 func WithRetryTransport(b bool) Option { return func(o *clientOptions) { o.UseRetryTransport = b } }
+func WithCapCtime(b bool) Option       { return func(o *clientOptions) { o.CapCtime = b } }
+func WithSkipHaveCache(b bool) Option  { return func(o *clientOptions) { o.SkipHaveCache = b } }
+func WithNoCache(b bool) Option        { return func(o *clientOptions) { o.NoCache = b } }
 
 // NewClient returns a new client for the given server. Auth is set up according
 // to the client config (~/.config/camlistore/client-config.json)
@@ -125,7 +130,7 @@ var (
 
 // NewDownloader creates a new Downloader (client + properties + disk cache)
 // for the server
-func NewDownloader(server string, noCache bool) (*Downloader, error) {
+func NewDownloader(server string, options ...Option) (*Downloader, error) {
 	cachedDownloaderMtx.Lock()
 	defer cachedDownloaderMtx.Unlock()
 	down, ok := cachedDownloader[server]
@@ -133,7 +138,7 @@ func NewDownloader(server string, noCache bool) (*Downloader, error) {
 		return down, nil
 	}
 
-	cl, err := NewClient(server)
+	cl, err := NewClient(server, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +150,9 @@ func NewDownloader(server string, noCache bool) (*Downloader, error) {
 		return down, nil
 	}
 
-	if noCache {
+	var opts clientOptions
+	opts.apply(options...)
+	if opts.NoCache {
 		down.Fetcher = down.cl
 	} else {
 		bc, err := NewBadgerCache(down.cl, 512<<20)
