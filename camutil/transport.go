@@ -5,8 +5,11 @@
 package camutil
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -32,17 +35,36 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		ctx, cancel = context.WithTimeout(req.Context(), dur)
 		defer cancel()
 	}
+	if req.Body != nil && req.GetBody == nil {
+		var buf bytes.Buffer
+		oldBody := req.Body
+		req.Body = struct {
+			io.Reader
+			io.Closer
+		}{io.TeeReader(oldBody, &buf), io.NopCloser(nil)}
+		req.GetBody = func() (io.ReadCloser, error) {
+			return struct {
+				io.Reader
+				io.Closer
+			}{io.MultiReader(bytes.NewReader(buf.Bytes()), oldBody), io.NopCloser(nil)}, nil
+		}
+	}
 	logger := zlog.SFromContext(ctx)
 	var resp *http.Response
 	var err error
 	for iter := tr.Strategy.Start(); ; {
 		resp, err = tr.tr.RoundTrip(req)
+		if logger != nil && logger.Enabled(ctx, slog.LevelDebug) {
+			logger.Debug("RoundTrip", "url", req.URL.String(), "resp", resp, "error", err)
+		}
 		var sc int
 		if resp != nil {
 			sc = resp.StatusCode
 		}
-		if err == nil && resp != nil && sc < 500 || req.Body != nil && req.GetBody == nil {
-			if err == nil && resp == nil {
+		if err == nil && resp != nil && sc < 500 {
+			return resp, nil
+		} else if req.Body != nil && req.GetBody == nil { // We can't repeat this
+			if resp == nil && err == nil {
 				err = ErrEmptyResponse
 			}
 			return resp, err
@@ -51,7 +73,7 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			var retryErr error
 			if req.Body, retryErr = req.GetBody(); retryErr != nil {
 				logger.Error("retry GetBody", "error", retryErr)
-				if err == nil && resp == nil {
+				if resp == nil && err == nil {
 					err = retryErr
 				}
 				return resp, err
