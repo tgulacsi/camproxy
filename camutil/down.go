@@ -46,10 +46,23 @@ var (
 	cachedClientMtx sync.Mutex
 )
 
+type Option func(*clientOptions)
+
+type clientOptions struct {
+	UseRetryTransport bool
+}
+
+func (c *clientOptions) apply(opts ...Option) {
+	for _, o := range opts {
+		o(c)
+	}
+}
+func WithRetryTransport(b bool) Option { return func(o *clientOptions) { o.UseRetryTransport = b } }
+
 // NewClient returns a new client for the given server. Auth is set up according
 // to the client config (~/.config/camlistore/client-config.json)
 // and the environment variables.
-func NewClient(server string) (*client.Client, error) {
+func NewClient(server string, clientOpts ...Option) (*client.Client, error) {
 	if server == "" {
 		server = "http://localhost:3179"
 	}
@@ -88,13 +101,18 @@ func NewClient(server string) (*client.Client, error) {
 	if c, err = client.New(opts...); err != nil {
 		return nil, err
 	}
-	cl := c.HTTPClient()
-	cl.Transport = retryTransport{tr: cl.Transport, Strategy: retry.Strategy{
-		Delay: 100 * time.Millisecond, MaxDelay: 5 * time.Second,
-		Factor: 1.5, MaxCount: 10,
-		MaxDuration: 30 * time.Second,
-	}}
-	c.SetHTTPClient(cl)
+	var options clientOptions
+	options.apply(clientOpts...)
+
+	if options.UseRetryTransport {
+		cl := c.HTTPClient()
+		cl.Transport = retryTransport{tr: cl.Transport, Strategy: retry.Strategy{
+			Delay: 100 * time.Millisecond, MaxDelay: 5 * time.Second,
+			Factor: 1.5, MaxCount: 10,
+			MaxDuration: 30 * time.Second,
+		}}
+		c.SetHTTPClient(cl)
+	}
 	if !authIncluded {
 		if err = c.SetupAuth(); err != nil {
 			return nil, err
