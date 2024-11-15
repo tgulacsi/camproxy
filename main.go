@@ -587,7 +587,7 @@ func (w *respWriter) Write(p []byte) (int, error) {
 }
 
 func (w *respWriter) Close() (err error) {
-	if w.buf != nil && len(w.buf) > 0 {
+	if len(w.buf) != 0 {
 		_, err = w.ResponseWriter.Write(w.buf)
 	}
 	return

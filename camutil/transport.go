@@ -6,6 +6,7 @@ package camutil
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"time"
 
@@ -17,6 +18,8 @@ type retryTransport struct {
 	retry.Strategy
 	tr http.RoundTripper
 }
+
+var ErrEmptyResponse = errors.New("empty resonse")
 
 func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx := req.Context()
@@ -32,19 +35,25 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	logger := zlog.SFromContext(ctx)
 	var resp *http.Response
 	var err error
-	for iter := tr.Strategy.Start(); iter.Next(ctx.Done()); {
+	for iter := tr.Strategy.Start(); ; {
 		resp, err = tr.tr.RoundTrip(req)
 		var sc int
 		if resp != nil {
 			sc = resp.StatusCode
 		}
 		if err == nil && resp != nil && sc < 500 || req.Body != nil && req.GetBody == nil {
+			if err == nil && resp == nil {
+				err = ErrEmptyResponse
+			}
 			return resp, err
 		}
 		if req.Body != nil {
 			var retryErr error
 			if req.Body, retryErr = req.GetBody(); retryErr != nil {
 				logger.Error("retry GetBody", "error", retryErr)
+				if err == nil && resp == nil {
+					err = retryErr
+				}
 				return resp, err
 			}
 		}
@@ -52,6 +61,14 @@ func (tr retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			resp.Body.Close()
 		}
 		logger.Info("RoundTrip", "url", req.URL.String(), "statusCode", sc, "error", err)
+		if !iter.Next(ctx.Done()) {
+			break
+		}
+	}
+	if resp == nil && err == nil {
+		if err = ctx.Err(); err == nil {
+			err = ErrEmptyResponse
+		}
 	}
 	return resp, err
 }
