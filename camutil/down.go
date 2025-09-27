@@ -26,7 +26,7 @@ import (
 	"perkeep.org/pkg/schema"
 )
 
-var logger *slog.Logger
+var logger *slog.Logger = slog.New(slog.DiscardHandler)
 
 // SetLogger sets the package-level *slog.Logger
 func SetLogger(lgr *slog.Logger) { logger = lgr }
