@@ -224,7 +224,7 @@ func (sto Storage) Close() error {
 
 type nilLogger struct{}
 
-func (nilLogger) Errorf(string, ...interface{})   {}
-func (nilLogger) Warningf(string, ...interface{}) {}
-func (nilLogger) Infof(string, ...interface{})    {}
-func (nilLogger) Debugf(string, ...interface{})   {}
+func (nilLogger) Errorf(string, ...any)   {}
+func (nilLogger) Warningf(string, ...any) {}
+func (nilLogger) Infof(string, ...any)    {}
+func (nilLogger) Debugf(string, ...any)   {}

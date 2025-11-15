@@ -5,7 +5,6 @@
 package camutil
 
 import (
-	"context"
 	"os"
 	"strings"
 	"testing"
@@ -24,8 +23,7 @@ func TestNewPermanode(t *testing.T) {
 
 	u := NewUploader("file://"+tempDir, WithCapCtime(true), WithSkipHaveCache(true))
 	defer u.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	contentKey, err := u.FromReader(ctx, "test.txt", strings.NewReader("nothing"))
 	if err != nil {
 		t.Fatal(err)

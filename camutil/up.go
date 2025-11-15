@@ -460,7 +460,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 		down    *Downloader
 	)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		if i > 0 {
 			errbuf.Reset()
 			time.Sleep(time.Duration(i) * time.Second)
@@ -486,7 +486,7 @@ func (u *Uploader) camput(ctx context.Context, mode string, modeArgs ...string) 
 			continue
 		}
 		// the last line is the permanode ref, the first is the content
-		for _, line := range bytes.Split(out, []byte{'\n'}) {
+		for line := range bytes.SplitSeq(out, []byte{'\n'}) {
 			if line = bytes.TrimSpace(line); len(line) == 0 {
 				continue
 			}

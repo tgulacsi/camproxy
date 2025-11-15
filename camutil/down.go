@@ -203,10 +203,7 @@ func Base64ToRef(arg string) (br blob.Ref, err error) {
 	b := make([]byte, 64)
 	t := make([]byte, 2*len(b))
 	var i, n int
-	i = len(arg)
-	if i > cap(t) {
-		i = cap(t)
-	}
+	i = min(len(arg), cap(t))
 	t = []byte(arg[:i])
 	i = bytes.IndexByte(t, byte('-'))
 	if i < 0 {
