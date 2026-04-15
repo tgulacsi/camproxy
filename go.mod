@@ -9,7 +9,6 @@ require (
 	github.com/hashicorp/golang-lru v1.0.2
 	github.com/hjfreyer/taglib-go v0.0.0-20230511211649-38a11b8e3726 // indirect
 	github.com/nf/cr2 v0.0.0-20180623103828-4699471a17ed // indirect
-	github.com/peterbourgon/ff/v3 v3.4.0
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210305035536-64b5b1c73954 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
@@ -22,6 +21,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.1.3
 	github.com/UNO-SOFT/zlog v0.8.3
 	github.com/dgraph-io/badger/v4 v4.4.0
+	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	github.com/rogpeppe/retry v0.1.0
 	github.com/zRedShift/mimemagic v1.2.0
 	perkeep.org v0.0.0-20251115024002-545a90ced6f8
@@ -78,3 +78,5 @@ require (
 	modernc.org/zappy v1.1.0 // indirect
 	tailscale.com v1.88.3 // indirect
 )
+
+replace github.com/peterbourgon/ff/v4 v4.0.0-beta.1 => github.com/UNO-SOFT/ff/v4 v4.0.0-beta.1.us

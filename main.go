@@ -1,4 +1,4 @@
-// Copyright 2013, 2022 Tamás Gulácsi.
+// Copyright 2013, 2026 Tamás Gulácsi.
 //
 // SPDX-License-Identifier: Apache-2.0
 
@@ -9,7 +9,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"flag"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -29,7 +29,8 @@ import (
 	"perkeep.org/pkg/client"
 	"perkeep.org/pkg/schema"
 
-	"github.com/peterbourgon/ff/v3/ffcli"
+	"github.com/peterbourgon/ff/v4"
+	"github.com/peterbourgon/ff/v4/ffhelp"
 	"github.com/tgulacsi/camproxy/camutil"
 
 	"github.com/UNO-SOFT/zlog/v2"
@@ -39,16 +40,15 @@ var verbose zlog.VerboseVar
 var logger = zlog.NewLogger(zlog.MaybeConsoleHandler(&verbose, os.Stderr)).SLog()
 
 var (
-	fs                = flag.NewFlagSet("serve", flag.ContinueOnError)
-	flagInsecureTLS   = fs.Bool("k", camutil.InsecureTLS, "allow insecure TLS")
-	flagSkipIrregular = fs.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
-	//flagServer      = fs.String("server", ":3179", "Camlistore server address")
-	flagNoCache       = fs.Bool("no-cache", true, "no disk cache")
-	flagCapCtime      = fs.Bool("capctime", false, "forge ctime to be less or equal to mtime")
-	flagNoAuth        = fs.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
-	flagListen        = fs.String("listen", ":3178", "listen on")
-	flagParanoid      = fs.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
-	flagSkipHaveCache = fs.Bool("skiphavecache", false, "Skip have cache? (more stress on camlistored)")
+	fs                = ff.NewFlagSet("serve")
+	flagInsecureTLS   = fs.BoolDefault('k', "insecure", camutil.InsecureTLS, "allow insecure TLS")
+	flagSkipIrregular = fs.BoolDefault(0, "skip-irregular", camutil.SkipIrregular, "skip irregular files")
+	flagNoCache       = fs.BoolLongDefault("no-cache", true, "no disk cache")
+	flagCapCtime      = fs.BoolLong("capctime", "forge ctime to be less or equal to mtime")
+	flagNoAuth        = fs.BoolLong("noauth", "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
+	flagListen        = fs.StringLong("listen", ":3178", "listen on")
+	flagParanoid      = fs.StringLong("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
+	flagSkipHaveCache = fs.BoolLong("skiphavecache", "Skip have cache? (more stress on camlistored)")
 
 	server string
 )
@@ -61,10 +61,10 @@ func main() {
 }
 
 func Main() error {
-	fs.Var(&verbose, "v", "verbose logging")
+	fs.Value('v', "verbose", &verbose, "verbose logging")
 	client.AddFlags() // add -server flag
 
-	serveCmd := ffcli.Command{Name: "serve", FlagSet: fs,
+	serveCmd := ff.Command{Name: "serve", Flags: fs,
 		Exec: func(ctx context.Context, args []string) error {
 			server = client.ExplicitServer()
 			camutil.InsecureTLS = *flagInsecureTLS
@@ -94,7 +94,7 @@ func Main() error {
 		},
 	}
 
-	refCmd := ffcli.Command{Name: "ref",
+	refCmd := ff.Command{Name: "ref",
 		Exec: func(ctx context.Context, args []string) error {
 			var ref string
 			if len(args) == 0 || args[0] == "" || args[0] == "-" {
@@ -116,7 +116,7 @@ func Main() error {
 		},
 	}
 
-	upBytesCmd := ffcli.Command{Name: "upbytes",
+	upBytesCmd := ff.Command{Name: "upbytes",
 		Exec: func(ctx context.Context, args []string) error {
 			server = client.ExplicitServer()
 			r := io.ReadCloser(os.Stdin)
@@ -141,7 +141,9 @@ func Main() error {
 		},
 	}
 
-	hshCmd := ffcli.Command{Name: "hash", FlagSet: flag.NewFlagSet("hash", flag.ContinueOnError),
+	fs = ff.NewFlagSet("hash")
+	flagUseSHA1 := fs.BoolLong("use-sha1", "Force use of sha1")
+	hshCmd := ff.Command{Name: "hash", Flags: fs,
 		Exec: func(ctx context.Context, args []string) error {
 			var mem memory.Storage
 			for _, fn := range args {
@@ -167,16 +169,19 @@ func Main() error {
 			return nil
 		},
 	}
-	flagUseSHA1 := hshCmd.FlagSet.Bool("use-sha1", false, "Force use of sha1")
 
-	app := ffcli.Command{Name: "camutil", FlagSet: flag.CommandLine,
+	app := ff.Command{Name: "camutil",
 		Exec: func(ctx context.Context, args []string) error {
 			return serveCmd.Exec(ctx, args)
 		},
-		Subcommands: []*ffcli.Command{&serveCmd, &refCmd, &hshCmd, &upBytesCmd},
+		Subcommands: []*ff.Command{&serveCmd, &refCmd, &hshCmd, &upBytesCmd},
 	}
 
 	if err := app.Parse(os.Args[1:]); err != nil {
+		if errors.Is(err, ff.ErrHelp) {
+			ffhelp.Command(&app).WriteTo(os.Stderr)
+			err = nil
+		}
 		return err
 	}
 
