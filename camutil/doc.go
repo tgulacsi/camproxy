@@ -1,6 +1,6 @@
 // Copyright 2013, 2020 Tamás Gulácsi.
 //
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: EUPL-1.2
 
 /*
 Package camutil copies some unexported utilities from camlistore.org/cmd/cam{get,put}

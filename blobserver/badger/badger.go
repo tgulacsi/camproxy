@@ -1,6 +1,6 @@
 // Copyright 2020, 2022 The Perkeep Authors
 //
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: EUPL-1.2
 
 /*
 Copyright 2020 The Perkeep Authors

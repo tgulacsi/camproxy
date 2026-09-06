@@ -1,6 +1,6 @@
 // Copyright 2013, 2023 Tamás Gulácsi.
 //
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: EUPL-1.2
 
 // This file is copied from camlistore.org/cmd/camget/camget.got
 // Version 43e0b72ec49ac9a0eac60392a68b11eef095374f
