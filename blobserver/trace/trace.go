@@ -1,6 +1,6 @@
 // Copyright 2020 The Perkeep Authors
 //
-// SPDX-License-Identifier: EUPL-1.2
+// SPDX-License-Identifier: AGPL-3.0-or-later
 
 /*
 Copyright 2020 The Perkeep Authors
