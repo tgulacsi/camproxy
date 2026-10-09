@@ -29,10 +29,10 @@ import (
 	"perkeep.org/pkg/client"
 	"perkeep.org/pkg/schema"
 
-	"github.com/peterbourgon/ff/v4"
-	"github.com/peterbourgon/ff/v4/ffhelp"
 	"github.com/tgulacsi/camproxy/camutil"
 
+	"flag"
+	"github.com/UNO-SOFT/cli"
 	"github.com/UNO-SOFT/zlog/v2"
 )
 
@@ -40,15 +40,15 @@ var verbose zlog.VerboseVar
 var logger = zlog.NewLogger(zlog.MaybeConsoleHandler(&verbose, os.Stderr)).SLog()
 
 var (
-	fs                = ff.NewFlagSet("serve")
-	flagInsecureTLS   = fs.BoolDefault('k', "insecure", camutil.InsecureTLS, "allow insecure TLS")
-	flagSkipIrregular = fs.BoolDefault(0, "skip-irregular", camutil.SkipIrregular, "skip irregular files")
-	flagNoCache       = fs.BoolLongDefault("no-cache", true, "no disk cache")
-	flagCapCtime      = fs.BoolLong("capctime", "forge ctime to be less or equal to mtime")
-	flagNoAuth        = fs.BoolLong("noauth", "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
-	flagListen        = fs.StringLong("listen", ":3178", "listen on")
-	flagParanoid      = fs.StringLong("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
-	flagSkipHaveCache = fs.BoolLong("skiphavecache", "Skip have cache? (more stress on camlistored)")
+	fs                = flag.NewFlagSet("serve", flag.ContinueOnError)
+	flagInsecureTLS   = fs.Bool("insecure", camutil.InsecureTLS, "allow insecure TLS")
+	flagSkipIrregular = fs.Bool("skip-irregular", camutil.SkipIrregular, "skip irregular files")
+	flagNoCache       = fs.Bool("no-cache", true, "no disk cache")
+	flagCapCtime      = fs.Bool("capctime", false, "forge ctime to be less or equal to mtime")
+	flagNoAuth        = fs.Bool("noauth", false, "no HTTP Basic Authentication, even if CAMLI_AUTH is set")
+	flagListen        = fs.String("listen", ":3178", "listen on")
+	flagParanoid      = fs.String("paranoid", "", "Paranoid mode: save uploaded files also under this dir")
+	flagSkipHaveCache = fs.Bool("skiphavecache", false, "Skip have cache? (more stress on camlistored)")
 
 	server string
 )
@@ -61,11 +61,11 @@ func main() {
 }
 
 func Main() error {
-	fs.Value('v', "verbose", &verbose, "verbose logging")
+	fs.Var(&verbose, "verbose", "verbose logging")
 	client.AddFlags() // add -server flag
 
-	serveCmd := ff.Command{Name: "serve", Flags: fs,
-		Exec: func(ctx context.Context, args []string) error {
+	serveCmd := cli.Command{Name: "serve", Flags: fs,
+		Exec: func(ctx context.Context, state *cli.State) error {
 			server = client.ExplicitServer()
 			camutil.InsecureTLS = *flagInsecureTLS
 			camutil.SkipIrregular = *flagSkipIrregular
@@ -91,11 +91,12 @@ func Main() error {
 			defer mimeCache.Close()
 			logger.Info("Listening", "http", s.Addr, "camlistore", server)
 			return s.ListenAndServe()
-		},
+		}, FlagConfigs: []cli.FlagConfig{cli.FlagConfig{Name: "insecure", Short: "k"}, cli.FlagConfig{Name: "verbose", Short: "v"}},
 	}
 
-	refCmd := ff.Command{Name: "ref",
-		Exec: func(ctx context.Context, args []string) error {
+	refCmd := cli.Command{Name: "ref",
+		Exec: func(ctx context.Context, state *cli.State) error {
+			args := state.Args
 			var ref string
 			if len(args) == 0 || args[0] == "" || args[0] == "-" {
 				b, err := io.ReadAll(os.Stdin)
@@ -116,8 +117,9 @@ func Main() error {
 		},
 	}
 
-	upBytesCmd := ff.Command{Name: "upbytes",
-		Exec: func(ctx context.Context, args []string) error {
+	upBytesCmd := cli.Command{Name: "upbytes",
+		Exec: func(ctx context.Context, state *cli.State) error {
+			args := state.Args
 			server = client.ExplicitServer()
 			r := io.ReadCloser(os.Stdin)
 			if !(len(args) == 0 || args[0] == "" || args[0] == "-") {
@@ -141,10 +143,11 @@ func Main() error {
 		},
 	}
 
-	fs = ff.NewFlagSet("hash")
-	flagUseSHA1 := fs.BoolLong("use-sha1", "Force use of sha1")
-	hshCmd := ff.Command{Name: "hash", Flags: fs,
-		Exec: func(ctx context.Context, args []string) error {
+	fs = flag.NewFlagSet("hash", flag.ContinueOnError)
+	flagUseSHA1 := fs.Bool("use-sha1", false, "Force use of sha1")
+	hshCmd := cli.Command{Name: "hash", Flags: fs,
+		Exec: func(ctx context.Context, state *cli.State) error {
+			args := state.Args
 			var mem memory.Storage
 			for _, fn := range args {
 				fh := os.Stdin
@@ -170,16 +173,16 @@ func Main() error {
 		},
 	}
 
-	app := ff.Command{Name: "camutil",
-		Exec: func(ctx context.Context, args []string) error {
-			return serveCmd.Exec(ctx, args)
+	app := cli.Command{Name: "camutil",
+		Exec: func(ctx context.Context, state *cli.State) error {
+			return serveCmd.Exec(ctx, state)
 		},
-		Subcommands: []*ff.Command{&serveCmd, &refCmd, &hshCmd, &upBytesCmd},
+		SubCommands: []*cli.Command{&serveCmd, &refCmd, &hshCmd, &upBytesCmd},
 	}
 
-	if err := app.Parse(os.Args[1:]); err != nil {
-		if errors.Is(err, ff.ErrHelp) {
-			ffhelp.Command(&app).WriteTo(os.Stderr)
+	if err := cli.Parse(&app, os.Args[1:]); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			cli.PrintHelp(os.Stderr, &app)
 			err = nil
 		}
 		return err
@@ -196,7 +199,7 @@ func Main() error {
 
 	ctx, cancel := wrapCtx(context.Background())
 	defer cancel()
-	return app.Run(ctx)
+	return cli.Run(ctx, &app, nil)
 }
 
 func handle(w http.ResponseWriter, r *http.Request) {
