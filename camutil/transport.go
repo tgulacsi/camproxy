@@ -17,8 +17,8 @@ import (
 )
 
 type retryTransport struct {
-	retry.Strategy
 	tr http.RoundTripper
+	retry.Strategy
 }
 
 var (
