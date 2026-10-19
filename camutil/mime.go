@@ -11,7 +11,7 @@ import (
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/zRedShift/mimemagic"
 	"perkeep.org/pkg/sorted"
-	"perkeep.org/pkg/sorted/kvfile"
+	"perkeep.org/pkg/sorted/sqlite"
 )
 
 // DefaultMaxMemMimeCacheSize is the maximum size of in-memory mime cache
@@ -54,7 +54,7 @@ func NewMimeCache(filename string, maxMemCacheSize int) *MimeCache {
 		panic(err)
 	}
 
-	db, err := kvfile.NewStorage(filename)
+	db, err := sqlite.NewStorage(filename)
 	if err != nil {
 		logger.Error("open/create db", "file", filename, "error", err)
 	}

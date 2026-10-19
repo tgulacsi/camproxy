@@ -30,6 +30,8 @@ import (
 	"perkeep.org/pkg/blobserver"
 
 	"github.com/hashicorp/golang-lru/simplelru"
+
+	bs "github.com/tgulacsi/camproxy/blobserver"
 )
 
 var _ = blobserver.Storage(Storage{})
@@ -151,7 +153,7 @@ func (sto Storage) StorageGeneration() (initTime time.Time, random string, err e
 	if sg, ok := sto.storage.(blobserver.Generationer); ok {
 		return sg.StorageGeneration()
 	}
-	err = blobserver.ErrNotImplemented
+	err = bs.ErrNotImplemented
 	return
 }
 
@@ -159,5 +161,5 @@ func (sto Storage) ResetStorageGeneration() error {
 	if sg, ok := sto.storage.(blobserver.Generationer); ok {
 		return sg.ResetStorageGeneration()
 	}
-	return blobserver.ErrNotImplemented
+	return bs.ErrNotImplemented
 }
